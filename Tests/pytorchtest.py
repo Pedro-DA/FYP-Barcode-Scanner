@@ -1,9 +1,7 @@
 import torch
 from torch import nn
-
-import torchvision
-from torchvision import datasets
-from torchvision.transforms import ToTensor
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
 
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -19,19 +17,21 @@ train_dir = image_path / "Train"
 test_dir = image_path / "Test"
 
 #Visualize images in dataset
-random.seed(35)
-
 image_path_list = list(image_path.glob("*/*/*.jpg"))
 
-random_image_path = random.choice(image_path_list)
+data_tranform = transforms.Compose([
+    transforms.Resize(size=(64,64)),
+    transforms.RandomHorizontalFlip(p=0.5),
+    transforms.ToTensor()
+])
 
-image_class = random_image_path.parent.stem
+train_data=datasets.ImageFolder(root=train_dir,
+                                transform=data_tranform,
+                                target_transform=None)
 
-img = Image.open(random_image_path)
+test_data=datasets.ImageFolder(root=test_dir,
+                                transform=data_tranform)
 
-print(random_image_path)
-print(image_class)
-print(img.height)
-print(img.width)
+print(f"Train data:\n{train_data}\nTest data:\n{test_data}")
 
 
