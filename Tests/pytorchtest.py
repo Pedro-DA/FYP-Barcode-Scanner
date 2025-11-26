@@ -32,6 +32,14 @@ train_data=datasets.ImageFolder(root=train_dir,
 test_data=datasets.ImageFolder(root=test_dir,
                                 transform=data_tranform)
 
-print(f"Train data:\n{train_data}\nTest data:\n{test_data}")
+train_dataloader = DataLoader(dataset=train_data,
+                              batch_size=1,
+                              num_workers=8,
+                              shuffle=True)
+
+test_dataloader = DataLoader(dataset=test_data,
+                             batch_size=1,
+                             num_workers=8,
+                             shuffle=False)
 
 
