@@ -34,12 +34,14 @@ test_data=datasets.ImageFolder(root=test_dir,
 
 train_dataloader = DataLoader(dataset=train_data,
                               batch_size=1,
-                              num_workers=8,
                               shuffle=True)
 
 test_dataloader = DataLoader(dataset=test_data,
                              batch_size=1,
-                             num_workers=8,
                              shuffle=False)
+
+img, label = next(iter(train_dataloader))
+print(f"Image shape: {img.shape} -> [batch_size, color_channels, height, width]")
+print(f"Label shape: {label.shape}")
 
 
