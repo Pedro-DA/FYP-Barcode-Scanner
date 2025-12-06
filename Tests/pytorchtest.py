@@ -8,40 +8,83 @@ from pathlib import Path
 import numpy as np
 import random
 from PIL import Image
+import os
 
 # Setup path to data folder
-image_path = Path("Dataset")
+imagePath = Path("Dataset")
 
 # Setup train and testing paths
-train_dir = image_path / "Train"
-test_dir = image_path / "Test"
+trainDir = imagePath / "Train"
+testDir = imagePath / "Test"
 
 #Visualize images in dataset
-image_path_list = list(image_path.glob("*/*/*.jpg"))
+imagePathList = list(imagePath.glob("*/*/*.jpg"))
 
-data_tranform = transforms.Compose([
-    transforms.Resize(size=(64,64)),
-    transforms.RandomHorizontalFlip(p=0.5),
+trainTransform = transforms.Compose([
+    transforms.Resize((64,64)),
     transforms.ToTensor()
 ])
 
-train_data=datasets.ImageFolder(root=train_dir,
-                                transform=data_tranform,
+testTransform = transforms.Compose([#
+    transforms.Resize((64,64)),
+    transforms.ToTensor()
+])
+
+trainData=datasets.ImageFolder(root=trainDir,
+                                transform=trainTransform,
                                 target_transform=None)
 
-test_data=datasets.ImageFolder(root=test_dir,
-                                transform=data_tranform)
+testData=datasets.ImageFolder(root=testDir,
+                                transform=testTransform)
 
-train_dataloader = DataLoader(dataset=train_data,
-                              batch_size=1,
-                              shuffle=True)
+batchSize = 6
+numWorkers = os.cpu_count()
 
-test_dataloader = DataLoader(dataset=test_data,
-                             batch_size=1,
-                             shuffle=False)
+trainDataloader = DataLoader(dataset=trainData,
+                              batch_size = batchSize,
+                              shuffle=True,
+                              num_workers=numWorkers)
 
-img, label = next(iter(train_dataloader))
-print(f"Image shape: {img.shape} -> [batch_size, color_channels, height, width]")
-print(f"Label shape: {label.shape}")
+testDataloader = DataLoader(dataset=testData,
+                             batch_size = batchSize,
+                             shuffle=False,
+                             num_workers=numWorkers)
 
+class TinyVGG(nn.Module):
+    def __init__(self, inputShape: int,hiddenUnits: int, outputShape: int) -> None:
+        super().__init__()
+        self.convBlock1 = nn.Sequential(
+            nn.Conv2d(in_channels=inputShape,
+                      out_channels=hiddenUnits,
+                      kernel_size=3,
+                      stride=1,
+                      padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2,
+                         stride=2)
+        )
+        self.convBlock2 = nn.Sequential(
+            nn.Conv2d(hiddenUnits,hiddenUnits,kernel_size=3,padding=1),
+            nn.ReLU(),
+            nn.Conv2d(hiddenUnits,hiddenUnits,kernel_size=3,padding=1),
+            nn.ReLU(),
+            nn.MaxPool2d(2)
+        )
+        self.classifier = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(in_features=hiddenUnits*16*16,
+                      out_features=outputShape)
+        )
+    def forward(self, x: torch.Tensor):
+        x = self.convBlock1(x)
+        x = self.convBlock2(x)
+        x = self.classifier(x)
+        return x
+    
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+torch.manual_seed(74)
+model0 = TinyVGG(inputShape=3,
+                 hiddenUnits=10,
+                 outputShape=len(trainData.classes)).to(device)
 
+print(model0)
