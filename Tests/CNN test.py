@@ -46,11 +46,41 @@ def extractXmlContents(annotDir, imageDir):
     # Return the extracted attributes
     return filename,  width, height, class_num, x1,y1,x2,y2
 
-path = Path("Dataset/Kaggle")
-annotDir = path / "Annotations"
-imageDir = path / "Images"
 
-testImage = imageDir / "05102009081.jpg"
-testAnnot = annotDir / "05102009081.xml"
+numToLabels = {0:"barcode",1:"qr"}
 
-print(extractXmlContents(testAnnot, testImage))
+def xmlToCsv():
+    # List containing all our attributes regarding each image
+    xmlList = []
+
+    path = Path("Dataset/Kaggle")
+    annotDir = path / "Annotations"
+    imageDir = path / "Images"
+
+    # Get each file using iterdir() and sort to ensure matching order
+    annotfiles = sorted(annotDir.iterdir())
+    imagefiles = sorted(imageDir.iterdir())
+
+    # Loop over each image and its label
+    for annotPath, imagePath in zip(annotfiles, imagefiles):
+        value = extractXmlContents(annotPath, imagePath)
+        xmlList.append(value)
+
+    # Columns for Pandas DataFrame
+    columnName = ['filename', 'width', 'height', 'class_num', 'xmin', 'ymin', 'xmax', 'ymax']
+
+    # Create the DataFrame from mat_list
+    xmlDf = pd.DataFrame(xmlList, columns=columnName)
+
+    # Return the dataframe
+    return xmlDf
+
+# The Classes we will use for our training
+classesList = sorted(['cat',  'dog'])
+
+if not Path("Dataset/Kaggle/dataset.csv").exists():
+    # Run the function to convert all the xml files to a Pandas DataFrame
+    labelsDf = xmlToCsv()
+
+    # Saving the Pandas DataFrame as CSV File
+    labelsDf.to_csv(('Dataset/Kaggle/dataset.csv'), index=None)
