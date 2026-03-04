@@ -89,29 +89,28 @@ def preprocessDataset():
     labels = []
     boxes = []
     imgList = []
-    h = 256
-    w = 256
     imageDir = Path("Dataset/Kaggle/Images")
     csv_path = Path("Dataset/Kaggle/dataset.csv")
 
     with csv_path.open() as csvfile:
         rows = csv.reader(csvfile)
-        columns = next(iter(rows))
+        columns = next(rows)
         for row in rows:
             labels.append(int(row[3]))
-            arr = [float(row[4])/256,
-                   float(row[5])/256,
-                   float(row[6])/256,
-                   float(row[7])/256]
+
+            img_width = float(row[1])
+            img_height = float(row[2])
+
+            arr = [float(row[4]) / img_width,   # xmin
+                   float(row[5]) / img_height,  # ymin
+                   float(row[6]) / img_width,   # xmax
+                   float(row[7]) / img_height]  # ymax
             boxes.append(arr)
 
-            img_path = imageDir / row[0]  # replaces os.path.join()
-            # Read the image
-            img = cv2.imread(str(img_path))  # cv2 needs a string path
-            # Resize all images to a fix size
+            img_path = imageDir / row[0]
+            img = cv2.imread(str(img_path))
             image = cv2.resize(img, (256, 256))
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            # Normalize the image
             image = image.astype("float") / 255.0
             imgList.append(image)
 
@@ -129,3 +128,38 @@ random.shuffle(combinedList)
 
 # Extract back the contents of each list
 imgList, boxes, labels = zip(*combinedList)
+
+# Create a Matplotlib figure
+plt.figure(figsize=(20,20));
+
+# Generate a random sample of images each time the cell is run 
+random_range = random.sample(range(1, len(imgList)), 20)
+
+for itr, i in enumerate(random_range, 1):
+
+    # Bounding box of each image
+    a1, b1, a2, b2 = boxes[i];
+    img_size = 256
+
+    # Rescaling the boundig box values to match the image size
+    x1 = a1 * img_size
+    x2 = a2 * img_size
+    y1 = b1 * img_size
+    y2 = b2 * img_size
+
+    # The image to visualize
+    image = imgList[i]
+
+    # Draw bounding boxes on the image
+    cv2.rectangle(image, (int(x1),int(y1)),
+          (int(x2),int(y2)),
+                  (0,255,0),
+                  3);
+    
+    # Clip the values to 0-1 and draw the sample of images
+    img = np.clip(imgList[i], 0, 1)
+    plt.subplot(4, 5, itr);
+    plt.imshow(img);
+    plt.axis('off');
+
+plt.show()
