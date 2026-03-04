@@ -84,3 +84,48 @@ if not Path("Dataset/Kaggle/dataset.csv").exists():
 
     # Saving the Pandas DataFrame as CSV File
     labelsDf.to_csv(('Dataset/Kaggle/dataset.csv'), index=None)
+
+def preprocessDataset():
+    labels = []
+    boxes = []
+    imgList = []
+    h = 256
+    w = 256
+    imageDir = Path("Dataset/Kaggle/Images")
+    csv_path = Path("Dataset/Kaggle/dataset.csv")
+
+    with csv_path.open() as csvfile:
+        rows = csv.reader(csvfile)
+        columns = next(iter(rows))
+        for row in rows:
+            labels.append(int(row[3]))
+            arr = [float(row[4])/256,
+                   float(row[5])/256,
+                   float(row[6])/256,
+                   float(row[7])/256]
+            boxes.append(arr)
+
+            img_path = imageDir / row[0]  # replaces os.path.join()
+            # Read the image
+            img = cv2.imread(str(img_path))  # cv2 needs a string path
+            # Resize all images to a fix size
+            image = cv2.resize(img, (256, 256))
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            # Normalize the image
+            image = image.astype("float") / 255.0
+            imgList.append(image)
+
+    return labels, boxes, imgList
+
+# All images will resized to 300, 300 
+image_size = 256
+
+# Get Augmented images and bounding boxes
+labels, boxes, imgList = preprocessDataset()
+
+# Now we need to shuffle the data, so zip all lists and shuffle
+combinedList = list(zip(imgList, boxes, labels))
+random.shuffle(combinedList)
+
+# Extract back the contents of each list
+imgList, boxes, labels = zip(*combinedList)
