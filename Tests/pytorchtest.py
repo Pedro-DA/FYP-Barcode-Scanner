@@ -2,7 +2,7 @@ import torch
 from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
-import torchinfo
+from torchinfo import summary
 
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -105,3 +105,5 @@ print(f"Output logits:\n{pred}\n")
 print(f"Output prediction probabilities:\n{torch.softmax(pred, dim=1)}\n")
 print(f"Output prediction label:\n{torch.argmax(torch.softmax(pred, dim=1), dim=1)}\n")
 print(f"Actual label:\n{labelSingle}")
+
+print(summary(model0, input_size=[1,3,64,64]))
