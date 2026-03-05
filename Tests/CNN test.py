@@ -14,6 +14,12 @@ import pandas as pd
 from xml.dom import minidom
 import csv
 
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+from torchinfo import summary
+
 def extractXmlContents(annotDir, imageDir):
     file = minidom.parse(str(annotDir))
     
@@ -129,37 +135,52 @@ random.shuffle(combinedList)
 # Extract back the contents of each list
 imgList, boxes, labels = zip(*combinedList)
 
-# Create a Matplotlib figure
-plt.figure(figsize=(20,20));
+class FlexibleDetectionNet(nn.Module):
+    def __init__(self, in_channels: int, num_classes: int, hidden_units: int = 64):
+        super().__init__()
 
-# Generate a random sample of images each time the cell is run 
-random_range = random.sample(range(1, len(imgList)), 20)
+        # Shared CNN Backbone
+        self.backbone = nn.Sequential(
+            self._conv_block(in_channels,  hidden_units),        # block 1
+            self._conv_block(hidden_units, hidden_units * 2),    # block 2
+            self._conv_block(hidden_units * 2, hidden_units * 4),# block 3
+            self._conv_block(hidden_units * 4, hidden_units * 8),# block 4
+        )
 
-for itr, i in enumerate(random_range, 1):
+        self.avg_pool = nn.AdaptiveAvgPool2d((4, 4))  # forces a fixed output size regardless of input
 
-    # Bounding box of each image
-    a1, b1, a2, b2 = boxes[i];
-    img_size = 256
+        flat_features = hidden_units * 8 * 4 * 4
 
-    # Rescaling the boundig box values to match the image size
-    x1 = a1 * img_size
-    x2 = a2 * img_size
-    y1 = b1 * img_size
-    y2 = b2 * img_size
+        # Classification head
+        self.class_head = nn.Sequential(
+            nn.Linear(flat_features, 240),
+            nn.ReLU(),
+            nn.Linear(240, 120),
+            nn.ReLU(),
+            nn.Linear(120, num_classes),
+            nn.Softmax(dim=1)
+        )
 
-    # The image to visualize
-    image = imgList[i]
+        # Bounding box head
+        self.box_head = nn.Sequential(
+            nn.Linear(flat_features, 240),
+            nn.ReLU(),
+            nn.Linear(240, 120),
+            nn.ReLU(),
+            nn.Linear(120, 4),
+            nn.Sigmoid()
+        )
 
-    # Draw bounding boxes on the image
-    cv2.rectangle(image, (int(x1),int(y1)),
-          (int(x2),int(y2)),
-                  (0,255,0),
-                  3);
-    
-    # Clip the values to 0-1 and draw the sample of images
-    img = np.clip(imgList[i], 0, 1)
-    plt.subplot(4, 5, itr);
-    plt.imshow(img);
-    plt.axis('off');
+    def _conv_block(in_channels: int, out_channels: int) -> nn.Sequential:
+        return nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=5, padding=2),
+            nn.ReLU(),
+            nn.MaxPool2d(kernel_size=2, stride=2)
+        )
 
-plt.show()
+    def forward(self, x: torch.Tensor):
+        x = self.backbone(x)
+        x = self.avg_pool(x)
+        x = torch.flatten(x, start_dim=1)
+
+        return [self.class_head(x), self.box_head(x)]
