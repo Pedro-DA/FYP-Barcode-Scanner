@@ -144,3 +144,32 @@ trainImages, valImages, trainLabels, \
 valLabels, trainBoxes, valBoxes = train_test_split( np.array(imgList), np.array(labels), np.array(boxes), test_size = 0.2, random_state = 43)
 
 print('Training Images Count: {}, Validation Images Count: {}'.format(len(trainImages), len(valImages) ))
+
+class Dataset():
+    def __init__(self, trainImages, trainLabels, trainBoxes):
+        self.images = torch.permute(torch.from_numpy(trainImages),(0,3,1,2)).float()
+        self.labels = torch.from_numpy(trainLabels).type(torch.LongTensor)
+        self.boxes = torch.from_numpy(trainBoxes).float()
+
+    def __len__(self):
+        return len(self.labels)
+
+    # To return x,y values in each iteration over dataloader as batches.
+
+    def __getitem__(self, idx):
+        return (self.images[idx],
+              self.labels[idx],
+              self.boxes[idx])
+
+# Inheriting from Dataset class
+
+class ValDataset(Dataset):
+
+    def __init__(self, valImages, valLabels, valBoxes):
+
+        self.images = torch.permute(torch.from_numpy(valImages),(0,3,1,2)).float()
+        self.labels = torch.from_numpy(valLabels).type(torch.LongTensor)
+        self.boxes = torch.from_numpy(valBoxes).float()
+
+dataset = Dataset(trainImages, trainLabels, trainBoxes)
+valdataset = ValDataset(valImages, valLabels, valBoxes)
