@@ -20,6 +20,8 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torchinfo import summary
 
+import FlexibleDetectionNet
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def extractXmlContents(annotDir, imageDir):
@@ -136,3 +138,9 @@ random.shuffle(combinedList)
 
 # Extract back the contents of each list
 imgList, boxes, labels = zip(*combinedList)
+
+# Split the data of images, labels and their annotations
+trainImages, valImages, trainLabels, \
+valLabels, trainBoxes, valBoxes = train_test_split( np.array(imgList), np.array(labels), np.array(boxes), test_size = 0.2, random_state = 43)
+
+print('Training Images Count: {}, Validation Images Count: {}'.format(len(trainImages), len(valImages) ))
