@@ -5,7 +5,7 @@ from torchvision import datasets, transforms
 from torchinfo import summary
 
 class FlexibleDetectionNet(nn.Module):
-    def __init__(self, in_channels: int, num_classes: int, hidden_units: int = 64):
+    def __init__(self, in_channels: int, num_classes: int, hidden_units: int):
         super().__init__()
 
         # Shared CNN Backbone
@@ -39,7 +39,8 @@ class FlexibleDetectionNet(nn.Module):
             nn.Linear(120, 4),
             nn.Sigmoid()
         )
-
+    
+    @staticmethod
     def _conv_block(in_channels: int, out_channels: int) -> nn.Sequential:
         return nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=5, padding=2),

@@ -20,7 +20,7 @@ from torchinfo import summary
 import torch.optim as optim
 import torch.nn.functional as F
 
-import FlexibleDetectionNet
+import Model
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -174,9 +174,6 @@ class ValDataset(Dataset):
 dataset = Dataset(trainImages, trainLabels, trainBoxes)
 valdataset = ValDataset(valImages, valLabels, valBoxes)
 
-model = FlexibleDetectionNet(in_channels=3, num_classes=2)
-model = model.to(device)
-
 def getNumCorrect(preds, labels):
     return torch.round(preds).argmax(dim=1).eq(labels).sum().item()
 
@@ -257,3 +254,8 @@ def train(model):
             bestLoss = totalLoss
             torch.save(model.state_dict(), "models/best_model.pth")
             print(f"  -> Model improved, saved.")
+
+
+model = Model.FlexibleDetectionNet(in_channels=3, num_classes=2, hidden_units=12)
+model = model.to(device)
+train(model)
