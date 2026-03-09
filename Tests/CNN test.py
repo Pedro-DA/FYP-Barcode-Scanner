@@ -1,11 +1,9 @@
-import numpy as np
-
 from sklearn.model_selection import train_test_split
-
-import matplotlib.pyplot as plt
 import cv2
 import random
 import os
+import numpy as np
+import time
 
 from PIL import Image
 from pathlib import Path
@@ -19,6 +17,8 @@ from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from torchinfo import summary
+import torch.optim as optim
+import torch.nn.functional as F
 
 import FlexibleDetectionNet
 
@@ -173,3 +173,87 @@ class ValDataset(Dataset):
 
 dataset = Dataset(trainImages, trainLabels, trainBoxes)
 valdataset = ValDataset(valImages, valLabels, valBoxes)
+
+model = FlexibleDetectionNet(in_channels=3, num_classes=2)
+model = model.to(device)
+
+def getNumCorrect(preds, labels):
+    return torch.round(preds).argmax(dim=1).eq(labels).sum().item()
+
+dataloader = torch.utils.data.DataLoader(
+       dataset, batch_size=32, shuffle=True)
+valDataloader = torch.utils.data.DataLoader(
+       valdataset, batch_size=32, shuffle=True)
+
+def train(model):
+    optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', patience=3, factor=0.1
+    )
+
+    numEpochs = 30
+    lambdaClass = 1.0
+    lambdaBox = 0.5
+    epochs = []
+    losses = []
+    bestLoss = float('inf')
+    valDataSize = len(valDataloader.dataset)
+
+    os.makedirs('models', exist_ok=True)
+
+    for epoch in range(numEpochs):
+        totalLoss = 0
+        totalCorrect = 0
+        trainStart = time.time()
+
+        # Training phase
+        model.train()
+        for batch, (x, y, z) in enumerate(dataloader):
+            x, y, z = x.to(device), y.to(device), z.to(device)
+            optimizer.zero_grad()
+
+            [yPred, zPred] = model(x)
+
+            classLoss = F.cross_entropy(yPred, y)
+            boxLoss = F.mse_loss(zPred, z)
+            totalLoss = (lambdaClass * classLoss) + (lambdaBox * boxLoss)
+            totalLoss.backward()
+
+            optimizer.step()
+            print(f"Train batch: {batch+1} epoch: {epoch}",
+                  f"time: {(time.time()-trainStart)/60:.2f}mins", end='\r')
+
+        # Validation phase
+        model.eval()
+        for batch, (x, y, z) in enumerate(valDataloader):
+            x, y, z = x.to(device), y.to(device), z.to(device)
+
+            with torch.no_grad():
+                [yPred, zPred] = model(x)
+                class_loss = F.cross_entropy(yPred, y)
+                box_loss = F.mse_loss(zPred, z)
+
+            totalLoss += (class_loss.item() + box_loss.item())
+            totalCorrect += getNumCorrect(yPred, y)
+            print(f"Val batch: {batch+1} epoch: {epoch}",
+                  f"time: {(time.time()-trainStart)/60:.2f}mins", end='\r')
+
+        # Epoch end
+        accuracy = (totalCorrect / valDataSize) * 100
+        epochs.append(epoch)
+        losses.append(totalLoss)
+
+        print(f"Epoch {epoch+1} | "
+              f"Accuracy: {accuracy:.2f}% | "
+              f"Loss: {totalLoss:.4f} | "
+              f"LR: {optimizer.param_groups[0]['lr']} | "
+              f"Time: {(time.time()-trainStart)/60:.2f}mins")
+
+        # Step the scheduler based on validation loss
+        scheduler.step(totalLoss)
+
+        # Only save if model improved
+        if totalLoss < bestLoss:
+            bestLoss = totalLoss
+            torch.save(model.state_dict(), "models/best_model.pth")
+            print(f"  -> Model improved, saved.")
