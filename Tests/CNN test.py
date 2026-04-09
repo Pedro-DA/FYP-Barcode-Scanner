@@ -14,9 +14,6 @@ import csv
 
 import torch
 from torch import nn
-from torch.utils.data import DataLoader
-from torchvision import datasets, transforms
-from torchinfo import summary
 import torch.optim as optim
 import torch.nn.functional as F
 
