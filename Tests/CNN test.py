@@ -4,8 +4,6 @@ import random
 import os
 import numpy as np
 import time
-
-from PIL import Image
 from pathlib import Path
 
 import pandas as pd
@@ -13,7 +11,6 @@ from xml.dom import minidom
 import csv
 
 import torch
-from torch import nn
 import torch.optim as optim
 import torch.nn.functional as F
 

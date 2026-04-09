@@ -34,7 +34,7 @@ def postprocess(image, results, orig_h, orig_w):
 def predict(image, scale=0.5):
     model = Model.FlexibleDetectionNet(in_channels=3, num_classes=2, hidden_units=12)
     model = model.to(device)
-    model.load_state_dict(torch.load("models/best_model.pth"))
+    model.load_state_dict(torch.load("models/bestModel.pth"))
     model.eval()
 
     img = cv2.imread(image)
