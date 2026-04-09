@@ -196,7 +196,8 @@ def train(model):
     os.makedirs('models', exist_ok=True)
 
     for epoch in range(numEpochs):
-        totalLoss = 0
+        trainTotalLoss = 0.0
+        valTotalLoss = 0.0
         totalCorrect = 0
         trainStart = time.time()
 
@@ -210,10 +211,11 @@ def train(model):
 
             classLoss = F.cross_entropy(yPred, y)
             boxLoss = F.mse_loss(zPred, z)
-            totalLoss = (lambdaClass * classLoss) + (lambdaBox * boxLoss)
-            totalLoss.backward()
+            batchLoss = (lambdaClass * classLoss) + (lambdaBox * boxLoss)
+            batchLoss.backward()
 
             optimizer.step()
+            trainTotalLoss += batchLoss.item()
             print(f"Train batch: {batch+1} epoch: {epoch}",
                   f"time: {(time.time()-trainStart)/60:.2f}mins", end='\r')
 
@@ -227,7 +229,7 @@ def train(model):
                 class_loss = F.cross_entropy(yPred, y)
                 box_loss = F.mse_loss(zPred, z)
 
-            totalLoss += (class_loss.item() + box_loss.item())
+            valTotalLoss += (lambdaClass * class_loss.item()) + (lambdaBox * box_loss.item())
             totalCorrect += getNumCorrect(yPred, y)
             print(f"Val batch: {batch+1} epoch: {epoch}",
                   f"time: {(time.time()-trainStart)/60:.2f}mins", end='\r')
@@ -235,20 +237,19 @@ def train(model):
         # Epoch end
         accuracy = (totalCorrect / valDataSize) * 100
         epochs.append(epoch)
-        losses.append(totalLoss)
+        losses.append(valTotalLoss)
 
         print(f"Epoch {epoch+1} | "
+              f"Train Loss: {trainTotalLoss:.4f} | "
+              f"Val Loss: {valTotalLoss:.4f} | "
               f"Accuracy: {accuracy:.2f}% | "
-              f"Loss: {totalLoss:.4f} | "
               f"LR: {optimizer.param_groups[0]['lr']} | "
               f"Time: {(time.time()-trainStart)/60:.2f}mins")
 
-        # Step the scheduler based on validation loss
-        scheduler.step(totalLoss)
+        scheduler.step(valTotalLoss)
 
-        # Only save if model improved
-        if totalLoss < bestLoss:
-            bestLoss = totalLoss
+        if valTotalLoss < bestLoss:
+            bestLoss = valTotalLoss
             torch.save(model.state_dict(), "models/best_model.pth")
             print(f"  -> Model improved, saved.")
 
