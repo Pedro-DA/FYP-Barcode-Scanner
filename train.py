@@ -11,6 +11,34 @@ import torch.optim as optim
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+def yoloLoss(pred, target, lambdaCoord=5.0, lambdaNoobj=0.5):
+    # pred, target: (batch, S, S, 6) — [conf, x, y, w, h, class]
+    objMask  = target[..., 0] == 1   # (batch, S, S) bool
+    nobjMask = ~objMask
+
+    # Confidence — BCE, downweight no-obj cells
+    rawConfLoss = F.binary_cross_entropy(pred[..., 0], target[..., 0], reduction='none')
+    confLoss = (objMask.float() * rawConfLoss + lambdaNoobj * nobjMask.float() * rawConfLoss).sum()
+
+    # Bbox — MSE with sqrt on w/h, only obj cells
+    bboxLoss = torch.tensor(0.0, device=pred.device)
+    if objMask.any():
+        predBox = pred[objMask][..., 1:5]    # (N, 4) [x, y, w, h]
+        targBox = target[objMask][..., 1:5]
+        predSqrt = torch.cat([predBox[..., :2], predBox[..., 2:].clamp(min=1e-6).sqrt()], dim=-1)
+        targSqrt = torch.cat([targBox[..., :2], targBox[..., 2:].clamp(min=1e-6).sqrt()], dim=-1)
+        bboxLoss = lambdaCoord * F.mse_loss(predSqrt, targSqrt, reduction='sum')
+
+    # Class — BCE, only obj cells
+    classLoss = torch.tensor(0.0, device=pred.device)
+    if objMask.any():
+        classLoss = F.binary_cross_entropy(
+            pred[objMask][..., 5], target[objMask][..., 5], reduction='sum'
+        )
+
+    batchSize = pred.shape[0]
+    total = (confLoss + bboxLoss + classLoss) / batchSize
+    return total, confLoss.item() / batchSize, bboxLoss.item() / batchSize, classLoss.item() / batchSize
 
 def generateRunId():
     return datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -36,7 +64,7 @@ def plotTrainingCurves(history, runDir):
     epochs     = [r['epoch']          for r in history]
     trainLoss  = [r['trainLoss']      for r in history]
     valLoss    = [r['valLoss']        for r in history]
-    valAcc     = [r['valAccuracyPct'] for r in history]
+    valRecall = [r['objRecallPct'] for r in history]
     lr         = [r['learningRate']   for r in history]
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
@@ -50,10 +78,10 @@ def plotTrainingCurves(history, runDir):
     axes[0].legend()
     axes[0].grid(True)
 
-    axes[1].plot(epochs, valAcc, color='green')
+    axes[1].plot(epochs, valRecall, color='green')
     axes[1].set_xlabel('Epoch')
-    axes[1].set_ylabel('Accuracy (%)')
-    axes[1].set_title('Validation Accuracy')
+    axes[1].set_ylabel('Obj Recall (%)')
+    axes[1].set_title('Object Cell Recall')
     axes[1].grid(True)
 
     axes[2].plot(epochs, lr, color='orange')
@@ -67,21 +95,21 @@ def plotTrainingCurves(history, runDir):
     plt.close()
 
 
-def train(model, trainLoader, valLoader, valDataSize, config):
+def train(model, trainLoader, valLoader, config):
     """
     Required config:
         numEpochs     int
         lr            float
-        lambdaClass   float   weight on classification loss
-        lambdaBox     float   weight on bounding box loss
+        lambdaCoord   float   weight on bbox loss (default 5.0)
+        lambdaNoobj   float   weight on no-object confidence loss (default 0.5)
 
     Metadata config:
-        modelVariant    str   
-        datasetVersion  str   
+        modelVariant    str
+        datasetVersion  str
         batchSize       int
         notes           str   text description of this run
     """
-    runId   = generateRunId()
+    runId     = generateRunId()
     modelsDir = Path('models')
     runDir    = modelsDir / 'runs' / runId
     runDir.mkdir(parents=True, exist_ok=True)
@@ -92,8 +120,8 @@ def train(model, trainLoader, valLoader, valDataSize, config):
         'numEpochs':       config['numEpochs'],
         'batchSize':       config.get('batchSize',      ''),
         'learningRate':    config['lr'],
-        'classLossWeight': config['lambdaClass'],
-        'boxLossWeight':   config['lambdaBox'],
+        'coordLossWeight': config.get('lambdaCoord', 5.0),
+        'noobjLossWeight': config.get('lambdaNoobj', 0.5),
         'notes':           config.get('notes',          ''),
     })
 
@@ -109,20 +137,19 @@ def train(model, trainLoader, valLoader, valDataSize, config):
         epochStart     = time.time()
         trainTotalLoss = 0.0
         valTotalLoss   = 0.0
+        valConfLoss    = 0.0
+        valBboxLoss    = 0.0
         valClassLoss   = 0.0
-        valBoxLoss     = 0.0
-        totalCorrect   = 0
+        totalObjCells  = 0
+        correctObjCells = 0
 
         # Training phase
         model.train()
-        for x, y, z in trainLoader:
-            x, y, z = x.to(device), y.to(device), z.to(device)
+        for imgs, targets in trainLoader:
+            imgs, targets = imgs.to(device), targets.to(device)
             optimizer.zero_grad()
-
-            classOut, boxOut = model(x)
-            classLoss = F.cross_entropy(classOut, y)
-            boxLoss   = F.mse_loss(boxOut, z)
-            loss      = (config['lambdaClass'] * classLoss) + (config['lambdaBox'] * boxLoss)
+            pred = model(imgs)
+            loss, _, _, _ = yoloLoss(pred, targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
             loss.backward()
             optimizer.step()
             trainTotalLoss += loss.item()
@@ -130,21 +157,24 @@ def train(model, trainLoader, valLoader, valDataSize, config):
         # Validation phase
         model.eval()
         with torch.no_grad():
-            for x, y, z in valLoader:
-                x, y, z = x.to(device), y.to(device), z.to(device)
-                classOut, boxOut = model(x)
-                classLoss = F.cross_entropy(classOut, y)
-                boxLoss   = F.mse_loss(boxOut, z)
+            for imgs, targets in valLoader:
+                imgs, targets = imgs.to(device), targets.to(device)
+                pred = model(imgs)
+                loss, cLoss, bLoss, klLoss = yoloLoss(pred, targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
 
-                valClassLoss   += classLoss.item()
-                valBoxLoss     += boxLoss.item()
-                valTotalLoss   += (config['lambdaClass'] * classLoss.item()) + (config['lambdaBox'] * boxLoss.item())
-                totalCorrect   += classOut.argmax(dim=1).eq(y).sum().item()
+                valTotalLoss  += loss.item()
+                valConfLoss   += cLoss
+                valBboxLoss   += bLoss
+                valClassLoss  += klLoss
+
+                objMask = targets[..., 0] == 1
+                totalObjCells   += objMask.sum().item()
+                correctObjCells += (pred[..., 0][objMask] > 0.5).sum().item()
 
         currentLr    = optimizer.param_groups[0]['lr']
         scheduler.step(valTotalLoss)
 
-        accuracy     = (totalCorrect / valDataSize) * 100
+        objRecall    = (correctObjCells / totalObjCells * 100) if totalObjCells > 0 else 0.0
         epochDuration = time.time() - epochStart
         isBest       = valTotalLoss < bestValLoss
 
@@ -157,11 +187,12 @@ def train(model, trainLoader, valLoader, valDataSize, config):
             'epoch':          epoch + 1,
             'trainLoss':      round(trainTotalLoss, 4),
             'valLoss':        round(valTotalLoss,   4),
-            'valAccuracyPct': round(accuracy,        2),
-            'classLoss':      round(valClassLoss,    4),
-            'boxLoss':        round(valBoxLoss,      4),
+            'objRecallPct':   round(objRecall,      2),
+            'valConfLoss':    round(valConfLoss,    4),
+            'valBboxLoss':    round(valBboxLoss,    4),
+            'valClassLoss':   round(valClassLoss,   4),
             'learningRate':   currentLr,
-            'epochDurationS': round(epochDuration,   1),
+            'epochDurationS': round(epochDuration,  1),
             'isBestEpoch':    int(isBest),
         }
         history.append(epochRow)
@@ -170,7 +201,7 @@ def train(model, trainLoader, valLoader, valDataSize, config):
         print(f"Epoch {epoch + 1:>3}/{config['numEpochs']} | "
               f"Train: {trainTotalLoss:.4f} | "
               f"Val: {valTotalLoss:.4f} | "
-              f"Acc: {accuracy:.1f}% | "
+              f"Recall: {objRecall:.1f}% | "
               f"LR: {currentLr:.2e} | "
               f"{'*' if isBest else ' '} "
               f"{epochDuration:.0f}s")
@@ -181,3 +212,4 @@ def train(model, trainLoader, valLoader, valDataSize, config):
     plotTrainingCurves(history, runDir)
     print(f"\nRun {runId} complete. Artefacts saved to {runDir}")
     return history
+
