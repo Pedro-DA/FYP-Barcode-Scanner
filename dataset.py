@@ -1,142 +1,121 @@
-from sklearn.model_selection import train_test_split
-import cv2
+import json
 import random
-import numpy as np
 from pathlib import Path
 
-import pandas as pd
-from xml.dom import minidom
-import csv
-
+import cv2
 import torch
+from torch.utils.data import Dataset, DataLoader
 
-def xmlToCsv():
-    csvPath = Path("Dataset/Kaggle/dataset.csv")
-    if csvPath.exists():
-        return pd.read_csv(csvPath)   #use cache if available
+BARBER_CLASS_MAP = {
+    'Code 128': 0, 'Code 39': 0, 'EAN-2': 0, 'EAN-8': 0, 'EAN-13': 0,
+    'GS1-128': 0, 'IATA 2 of 5': 0, 'Intelligent Mail Barcode': 0,
+    'Interleaved 2 of 5': 0, 'Japan Postal Barcode': 0, 'KIX-code': 0,
+    'PostNet': 0, 'RoyalMail Code': 0, 'UPC': 0, '1D': 0,
+    'Aztec': 1, 'Datamatrix': 1, 'PDF-417': 1, 'QR Code': 1
+}
 
-    xmlList = []
-    path = Path("Dataset/Kaggle")
-    annotDir = path / "Annotations"
-    imageDir = path / "Images"
+def parseBarBeRJson(datasetPath='Dataset/BarBeR'):
+    datasetPath = Path(datasetPath)
+    imageDir = datasetPath / 'Images'
+    annotDir = datasetPath / 'Annotations'
 
-    annotFiles = sorted(annotDir.iterdir())
-    imageFiles = sorted(imageDir.iterdir())
+    samples = []
 
-    for annotPath, imagePath in zip(annotFiles, imageFiles):
-        value = extractXmlContents(annotPath, imagePath)
-        xmlList.append(value)
+    for jsonPath in sorted(annotDir.glob('*.json')):
+        with open(jsonPath) as f:
+            data = json.load(f)
 
-    columnName = ['filename', 'width', 'height', 'class_num', 'xmin', 'ymin', 'xmax', 'ymax']
-    xmlDf = pd.DataFrame(xmlList, columns=columnName)
-    xmlDf.to_csv(csvPath, index=None)   #save cache for next time
-    return xmlDf
+        for entry in data.values():
+            filename = entry['filename']
+            imagePath = imageDir / filename
 
-def extractXmlContents(annotDir, imageDir):
-    file = minidom.parse(str(annotDir))
-    
-    # Get the height and width for our image
-    height, width = cv2.imread(str(imageDir)).shape[:2]
-        
-    #bounding box co-ordinates 
-    xmin = file.getElementsByTagName('xmin')
-    x1 = float(xmin[0].firstChild.data)
+            if not imagePath.exists():
+                continue
 
-    ymin = file.getElementsByTagName('ymin')
-    y1 = float(ymin[0].firstChild.data)
+            objects = []
+            for region in entry['regions']:
+                shapeAttr = region['shape_attributes']
+                regionAttr = region['region_attributes']
 
-    xmax = file.getElementsByTagName('xmax')
-    x2 = float(xmax[0].firstChild.data)
+                barcodeType = regionAttr.get('Type', '1D')
+                classNum = BARBER_CLASS_MAP.get(barcodeType, 0)
 
-    ymax = file.getElementsByTagName('ymax')
-    y2 = float(ymax[0].firstChild.data)
+                xs = shapeAttr['all_points_x']
+                ys = shapeAttr['all_points_y']
 
-    class_name = file.getElementsByTagName('name')
+                objects.append({
+                    'class': classNum,
+                    'xmin': min(xs),
+                    'ymin': min(ys),
+                    'xmax': max(xs),
+                    'ymax': max(ys)
+                })
 
-    if class_name[0].firstChild.data == "barcode":
-        class_num = 0
-    else:
-        class_num = 1
+            if objects:
+                samples.append({'imagePath': imagePath, 'objects': objects})
 
-    files = file.getElementsByTagName('filename')
-    filename = files[0].firstChild.data
+    return samples
 
-    # Return the extracted attributes
-    return filename,  width, height, class_num, x1,y1,x2,y2
+def encodeLabelGrid(objects, imgW, imgH, S=8):
+    target = torch.zeros((S, S, 6))
 
-def preprocessDataset():
-    labels = []
-    boxes = []
-    imgList = []
-    xmlToCsv()  # generates CSV if it doesn't exist, uses cache if it does
-    imageDir = Path("Dataset/Kaggle/Images")
-    csvPath = Path("Dataset/Kaggle/dataset.csv")
+    for obj in objects:
+        cx = (obj['xmin'] + obj['xmax']) / 2 / imgW
+        cy = (obj['ymin'] + obj['ymax']) / 2 / imgH
+        w  = (obj['xmax'] - obj['xmin']) / imgW
+        h  = (obj['ymax'] - obj['ymin']) / imgH
 
-    with csvPath.open() as csvfile:
-        rows = csv.reader(csvfile)
-        columns = next(rows)
-        for row in rows:
-            labels.append(int(row[3]))
+        cellX = min(int(cx * S), S - 1)
+        cellY = min(int(cy * S), S - 1)
 
-            imgWidth = float(row[1])
-            imgHeight = float(row[2])
+        offsetX = cx * S - cellX
+        offsetY = cy * S - cellY
 
-            arr = [float(row[4]) / imgWidth,   # xmin
-                   float(row[5]) / imgHeight,  # ymin
-                   float(row[6]) / imgWidth,   # xmax
-                   float(row[7]) / imgHeight]  # ymax
-            boxes.append(arr)
+        # only write if cell is empty (first object wins on collision)
+        if target[cellY, cellX, 0] == 0:
+            target[cellY, cellX] = torch.tensor([
+                1.0, offsetX, offsetY, w, h, float(obj['class'])
+            ])
 
-            imgPath = imageDir / row[0]
-            img = cv2.imread(str(imgPath))
-            image = cv2.resize(img, (256, 256))
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-            image = image.astype("float") / 255.0
-            imgList.append(image)
+    return target
 
-    return labels, boxes, imgList
-
-class barcodeDataset(torch.utils.data.Dataset):
-    def __init__(self, trainImages, trainLabels, trainBoxes):
-        self.images = torch.permute(torch.from_numpy(trainImages),(0,3,1,2)).float()
-        self.labels = torch.from_numpy(trainLabels).type(torch.LongTensor)
-        self.boxes = torch.from_numpy(trainBoxes).float()
+class barcodeDataset(Dataset):
+    def __init__(self, samples, S=8):
+        self.samples = samples
+        self.S = S
 
     def __len__(self):
-        return len(self.labels)
-
-    # To return x,y values in each iteration over dataloader as batches.
+        return len(self.samples)
 
     def __getitem__(self, idx):
-        return (self.images[idx],
-              self.labels[idx],
-              self.boxes[idx])
+        sample = self.samples[idx]
 
-class barcodeValDataset(barcodeDataset):
-    def __init__(self, valImages, valLabels, valBoxes):
-        self.images = torch.permute(torch.from_numpy(valImages),(0,3,1,2)).float()
-        self.labels = torch.from_numpy(valLabels).type(torch.LongTensor)
-        self.boxes = torch.from_numpy(valBoxes).float()
+        img = cv2.imread(str(sample['imagePath']))
+        imgH, imgW = img.shape[:2]
+        img = cv2.resize(img, (256, 256))
+        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        img = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
 
-def buildDataloaders(batchSize=32, testSize=0.2, randomState=43):
-    labels, boxes, imgList = preprocessDataset()
+        target = encodeLabelGrid(sample['objects'], imgW, imgH, self.S)
 
-    combinedList = list(zip(imgList, boxes, labels))
-    random.shuffle(combinedList)
-    imgList, boxes, labels = zip(*combinedList)
+        return img, target
 
-    trainImages, valImages, trainLabels, valLabels, trainBoxes, valBoxes = train_test_split(
-        np.array(imgList), np.array(labels), np.array(boxes),
-        test_size=testSize, random_state=randomState
-    )
+def buildDataloaders(batchSize=32, testSize=0.2, randomState=43, S=8):
+    samples = parseBarBeRJson()
 
-    print(f'Training Images: {len(trainImages)}, Validation Images: {len(valImages)}')
+    random.seed(randomState)
+    random.shuffle(samples)
 
-    trainDataset = barcodeDataset(trainImages, trainLabels, trainBoxes)
-    valDataset = barcodeValDataset(valImages, valLabels, valBoxes)
+    splitIdx = int(len(samples) * (1 - testSize))
+    trainSamples = samples[:splitIdx]
+    valSamples = samples[splitIdx:]
 
-    trainLoader = torch.utils.data.DataLoader(trainDataset, batch_size=batchSize, shuffle=True)
-    valLoader = torch.utils.data.DataLoader(valDataset, batch_size=batchSize, shuffle=True)
-    valDataSize = len(valDataset)
+    print(f'Training samples: {len(trainSamples)}, Validation samples: {len(valSamples)}')
 
-    return trainLoader, valLoader, valDataSize
+    trainDataset = barcodeDataset(trainSamples, S=S)
+    valDataset = barcodeDataset(valSamples, S=S)
+
+    trainLoader = DataLoader(trainDataset, batch_size=batchSize, shuffle=True)
+    valLoader = DataLoader(valDataset, batch_size=batchSize, shuffle=False)
+
+    return trainLoader, valLoader, len(valDataset)

@@ -9,7 +9,7 @@ trainLoader, valLoader, valDataSize = buildDataloaders()
 net = FlexibleDetectionNet(in_channels=3, num_classes=2, hidden_units=12).to(device)
 
 config = {
-    'numEpochs':   1,
+    'numEpochs':   100,
     'lr':          0.01,
     'lambdaClass': 1.0,
     'lambdaBox':   0.5,
