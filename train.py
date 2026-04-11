@@ -155,7 +155,6 @@ def train(model, trainLoader, valLoader, config):
             optimizer.step()
             trainTotalLoss += loss.item()
 
-
         # Validation phase
         model.eval()
         with torch.no_grad():

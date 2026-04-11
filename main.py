@@ -38,7 +38,7 @@ def trainModel(cache=False):
         'lr':          0.01,
         'lambdaCoord': 5.0,
         'lambdaNoobj': 0.5,
-        'batchSize':   32,
+        'batchSize':   64,
     }
     train(model, trainLoader, valLoader, config)
 
