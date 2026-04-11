@@ -98,15 +98,36 @@ class barcodeDataset(Dataset):
 
         img = cv2.imread(str(sample['imagePath']))
         imgH, imgW = img.shape[:2]
-        img = cv2.resize(img, (256, 256))
+        img = cv2.resize(img, (128, 128))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
 
         target = encodeLabelGrid(sample['objects'], imgW, imgH, self.S)
 
         return img, target
+    
+class cachedBarcodeDataset(Dataset):
+    def __init__(self, samples, S=8):
+        self.cache = []
+        for i, sample in enumerate(samples):
+            if i % 100 == 0:
+                print(f"  Caching {i}/{len(samples)}")
+            img = cv2.imread(str(sample['imagePath']))
+            imgH, imgW = img.shape[:2]
+            img = cv2.resize(img, (128, 128))
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
+            target = encodeLabelGrid(sample['objects'], imgW, imgH, S)
+            self.cache.append((img, target))
 
-def buildDataloaders(batchSize=32, testSize=0.2, randomState=43, S=8):
+    def __len__(self):
+        return len(self.cache)
+
+    def __getitem__(self, idx):
+        return self.cache[idx]
+
+
+def buildDataloaders(batchSize=32, testSize=0.2, randomState=43, S=8, cache=False):
     samples = parseBarBeRJson()
 
     random.seed(randomState)
@@ -118,8 +139,10 @@ def buildDataloaders(batchSize=32, testSize=0.2, randomState=43, S=8):
 
     print(f'Training samples: {len(trainSamples)}, Validation samples: {len(valSamples)}')
 
-    trainDataset = barcodeDataset(trainSamples, S=S)
-    valDataset = barcodeDataset(valSamples, S=S)
+    datasetClass = cachedBarcodeDataset if cache else barcodeDataset
+    trainDataset = datasetClass(trainSamples, S=S)
+    valDataset   = datasetClass(valSamples,   S=S)
+
 
     trainLoader = DataLoader(trainDataset, batch_size=batchSize, shuffle=True)
     valLoader = DataLoader(valDataset, batch_size=batchSize, shuffle=False)

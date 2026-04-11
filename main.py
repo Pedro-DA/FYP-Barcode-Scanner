@@ -29,9 +29,9 @@ def singleImage(imagePath, modelPath=None):
     plt.axis('off')
     plt.show()
 
-def trainModel():
+def trainModel(cache=False):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    trainLoader, valLoader = buildDataloaders()
+    trainLoader, valLoader = buildDataloaders(cache=cache)
     model = GridDetectionNet().to(device)
     config = {
         'numEpochs':   100,
@@ -47,6 +47,7 @@ if __name__ == '__main__':
     parser.add_argument('mode', choices=['image', 'camera', 'train'])
     parser.add_argument('--imagePath', type=str, default=None)
     parser.add_argument('--modelPath', type=str, default=None)
+    parser.add_argument('--cache', action='store_true', default=False)
     args = parser.parse_args()
 
     if args.mode == 'image':
@@ -56,5 +57,5 @@ if __name__ == '__main__':
     elif args.mode == 'camera':
         pass
     elif args.mode == 'train':
-        trainModel()
+        trainModel(cache=args.cache)
 

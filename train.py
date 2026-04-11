@@ -147,20 +147,24 @@ def train(model, trainLoader, valLoader, config):
         model.train()
         for imgs, targets in trainLoader:
             imgs, targets = imgs.to(device), targets.to(device)
-            optimizer.zero_grad()
-            pred = model(imgs)
-            loss, _, _, _ = yoloLoss(pred, targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
+            optimizer.zero_grad(set_to_none=True)
+            with torch.autocast(device_type='cpu', dtype=torch.bfloat16):
+                pred = model(imgs)
+                loss, _, _, _ = yoloLoss(pred, targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
             loss.backward()
             optimizer.step()
             trainTotalLoss += loss.item()
+
 
         # Validation phase
         model.eval()
         with torch.no_grad():
             for imgs, targets in valLoader:
                 imgs, targets = imgs.to(device), targets.to(device)
-                pred = model(imgs)
-                loss, cLoss, bLoss, klLoss = yoloLoss(pred, targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
+                with torch.autocast(device_type='cpu', dtype=torch.bfloat16):
+                    pred = model(imgs)
+                    loss, cLoss, bLoss, klLoss = yoloLoss(pred, targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
+
 
                 valTotalLoss  += loss.item()
                 valConfLoss   += cLoss
