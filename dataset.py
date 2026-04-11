@@ -118,4 +118,4 @@ def buildDataloaders(batchSize=32, testSize=0.2, randomState=43, S=8):
     trainLoader = DataLoader(trainDataset, batch_size=batchSize, shuffle=True)
     valLoader = DataLoader(valDataset, batch_size=batchSize, shuffle=False)
 
-    return trainLoader, valLoader, len(valDataset)
+    return trainLoader, valLoader
