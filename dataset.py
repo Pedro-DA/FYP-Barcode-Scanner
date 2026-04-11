@@ -23,7 +23,7 @@ def parseBarBeRJson(datasetPath='Dataset/BarBeR'):
 
     for jsonPath in sorted(annotDir.glob('*.json')):
         with open(jsonPath) as f:
-            data = json.load(f)
+            data = json.load(f)['_via_img_metadata']
 
         for entry in data.values():
             filename = entry['filename']
@@ -39,6 +39,12 @@ def parseBarBeRJson(datasetPath='Dataset/BarBeR'):
 
                 barcodeType = regionAttr.get('Type', '1D')
                 classNum = BARBER_CLASS_MAP.get(barcodeType, 0)
+
+                shapeAttr = region['shape_attributes']
+                regionAttr = region['region_attributes']
+
+                if shapeAttr.get('name') != 'polygon':
+                    continue
 
                 xs = shapeAttr['all_points_x']
                 ys = shapeAttr['all_points_y']
