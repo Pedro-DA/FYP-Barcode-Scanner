@@ -29,6 +29,33 @@ def singleImage(imagePath, modelPath=None):
     plt.axis('off')
     plt.show()
 
+def liveCamera(modelPath=None):
+    model = loadModel(modelPath)
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Error: could not open camera")
+        return
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        detections, latencyMs = runInference(model, frame)
+        frame = drawDetections(frame, detections)
+
+        cv2.putText(frame, f"{latencyMs:.1f} ms", (10, 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+
+        cv2.imshow("Barcode Scanner", frame)
+        key = cv2.waitKey(1) & 0xFF
+        windowClosed = cv2.getWindowProperty("Barcode Scanner", cv2.WND_PROP_VISIBLE) < 1
+        if key == ord('q') or windowClosed:
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
 def trainModel(cache=False, datasetPath='Dataset/BarBeR'):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     trainLoader, valLoader = buildDataloaders(cache=cache, datasetPath=datasetPath)
@@ -57,7 +84,7 @@ if __name__ == '__main__':
             parser.error("--imagePath required for image mode")
         singleImage(args.imagePath, args.modelPath)
     elif args.mode == 'camera':
-        pass
+        liveCamera(args.modelPath)
     elif args.mode == 'train':
         trainModel(cache=args.cache, datasetPath='Dataset/BarBeR')
 
