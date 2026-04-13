@@ -15,7 +15,7 @@ def loadModel(modelPath, S=8, hiddenUnits=32):
     model.eval()
     return model
 
-def preprocess(bgrFrame, imageSize=256):
+def preprocess(bgrFrame, imageSize=128):
     image = cv2.resize(bgrFrame, (imageSize, imageSize))
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     image = image.astype("float32") / 255.0
