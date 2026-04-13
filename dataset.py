@@ -126,9 +126,8 @@ class cachedBarcodeDataset(Dataset):
     def __getitem__(self, idx):
         return self.cache[idx]
 
-
-def buildDataloaders(batchSize=32, testSize=0.2, randomState=43, S=8, cache=False):
-    samples = parseBarBeRJson()
+def buildDataloaders(batchSize=32, testSize=0.2, randomState=43, S=8, cache=False, datasetPath='Dataset/BarBeR'):
+    samples = parseBarBeRJson(datasetPath=datasetPath)
 
     random.seed(randomState)
     random.shuffle(samples)
@@ -142,7 +141,6 @@ def buildDataloaders(batchSize=32, testSize=0.2, randomState=43, S=8, cache=Fals
     datasetClass = cachedBarcodeDataset if cache else barcodeDataset
     trainDataset = datasetClass(trainSamples, S=S)
     valDataset   = datasetClass(valSamples,   S=S)
-
 
     trainLoader = DataLoader(trainDataset, batch_size=batchSize, shuffle=True, pin_memory=True)
     valLoader = DataLoader(valDataset, batch_size=batchSize, shuffle=False, pin_memory=True)

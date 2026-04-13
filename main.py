@@ -29,16 +29,16 @@ def singleImage(imagePath, modelPath=None):
     plt.axis('off')
     plt.show()
 
-def trainModel(cache=False):
+def trainModel(cache=False, datasetPath='Dataset/BarBeR'):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    trainLoader, valLoader = buildDataloaders(cache=cache)
+    trainLoader, valLoader = buildDataloaders(cache=cache, datasetPath=datasetPath)
     model = GridDetectionNet().to(device)
     config = {
-        'numEpochs':   100,
-        'lr':          0.01,
+        'numEpochs': 100,
+        'lr': 0.01,
         'lambdaCoord': 5.0,
         'lambdaNoobj': 0.5,
-        'batchSize':   64,
+        'batchSize': 64,
     }
     train(model, trainLoader, valLoader, config)
 
@@ -57,5 +57,6 @@ if __name__ == '__main__':
     elif args.mode == 'camera':
         pass
     elif args.mode == 'train':
-        trainModel(cache=args.cache)
+        trainModel(cache=args.cache, datasetPath='Dataset/BarBeR')
+
 

@@ -17,7 +17,7 @@ def yoloLoss(pred, target, lambdaCoord=5.0, lambdaNoobj=0.5):
     nobjMask = ~objMask
 
     # Confidence — BCE, downweight no-obj cells
-    rawConfLoss = F.binary_cross_entropy(pred[..., 0], target[..., 0], reduction='none')
+    rawConfLoss = F.binary_cross_entropy(pred[..., 0].float(), target[..., 0].float(), reduction='none')
     confLoss = (objMask.float() * rawConfLoss + lambdaNoobj * nobjMask.float() * rawConfLoss).sum()
 
     # Bbox — MSE with sqrt on w/h, only obj cells
@@ -33,8 +33,9 @@ def yoloLoss(pred, target, lambdaCoord=5.0, lambdaNoobj=0.5):
     classLoss = torch.tensor(0.0, device=pred.device)
     if objMask.any():
         classLoss = F.binary_cross_entropy(
-            pred[objMask][..., 5], target[objMask][..., 5], reduction='sum'
+            pred[objMask][..., 5].float(), target[objMask][..., 5].float(), reduction='sum'
         )
+
 
     batchSize = pred.shape[0]
     total = (confLoss + bboxLoss + classLoss) / batchSize
@@ -61,11 +62,11 @@ def saveRunMetadata(metaCsvPath, runId, config):
         writer.writerow(row)
 
 def plotTrainingCurves(history, runDir):
-    epochs     = [r['epoch']          for r in history]
-    trainLoss  = [r['trainLoss']      for r in history]
-    valLoss    = [r['valLoss']        for r in history]
+    epochs = [r['epoch']          for r in history]
+    trainLoss = [r['trainLoss']      for r in history]
+    valLoss = [r['valLoss']        for r in history]
     valRecall = [r['objRecallPct'] for r in history]
-    lr         = [r['learningRate']   for r in history]
+    lr = [r['learningRate']   for r in history]
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
     fig.suptitle(f"Training Curves — {runDir.name}", fontsize=13)
@@ -109,9 +110,9 @@ def train(model, trainLoader, valLoader, config):
         batchSize       int
         notes           str   text description of this run
     """
-    runId     = generateRunId()
+    runId = generateRunId()
     modelsDir = Path('models')
-    runDir    = modelsDir / 'runs' / runId
+    runDir = modelsDir / 'runs' / runId
     runDir.mkdir(parents=True, exist_ok=True)
 
     saveRunMetadata(modelsDir / 'runsMetadata.csv', runId, {
@@ -134,13 +135,13 @@ def train(model, trainLoader, valLoader, config):
     history     = []
 
     for epoch in range(config['numEpochs']):
-        epochStart     = time.time()
+        epochStart = time.time()
         trainTotalLoss = 0.0
-        valTotalLoss   = 0.0
-        valConfLoss    = 0.0
-        valBboxLoss    = 0.0
-        valClassLoss   = 0.0
-        totalObjCells  = 0
+        valTotalLoss = 0.0
+        valConfLoss = 0.0
+        valBboxLoss = 0.0
+        valClassLoss = 0.0
+        totalObjCells = 0
         correctObjCells = 0
 
         # Training phase
@@ -150,7 +151,7 @@ def train(model, trainLoader, valLoader, config):
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device.type, dtype=torch.float16 if device.type == 'cuda' else torch.bfloat16):
                 pred = model(imgs)
-                loss, _, _, _ = yoloLoss(pred, targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
+            loss, _, _, _ = yoloLoss(pred.float(), targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
             loss.backward()
             optimizer.step()
             trainTotalLoss += loss.item()
@@ -162,41 +163,40 @@ def train(model, trainLoader, valLoader, config):
                 imgs, targets = imgs.to(device), targets.to(device)
                 with torch.autocast(device_type=device.type, dtype=torch.float16 if device.type == 'cuda' else torch.bfloat16):
                     pred = model(imgs)
-                    loss, cLoss, bLoss, klLoss = yoloLoss(pred, targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
-
-
-                valTotalLoss  += loss.item()
-                valConfLoss   += cLoss
-                valBboxLoss   += bLoss
-                valClassLoss  += klLoss
+                loss, cLoss, bLoss, klLoss = yoloLoss(pred.float(), targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
+                
+                valTotalLoss += loss.item()
+                valConfLoss += cLoss
+                valBboxLoss += bLoss
+                valClassLoss += klLoss
 
                 objMask = targets[..., 0] == 1
                 totalObjCells   += objMask.sum().item()
                 correctObjCells += (pred[..., 0][objMask] > 0.5).sum().item()
 
-        currentLr    = optimizer.param_groups[0]['lr']
+        currentLr = optimizer.param_groups[0]['lr']
         scheduler.step(valTotalLoss)
 
-        objRecall    = (correctObjCells / totalObjCells * 100) if totalObjCells > 0 else 0.0
+        objRecall = (correctObjCells / totalObjCells * 100) if totalObjCells > 0 else 0.0
         epochDuration = time.time() - epochStart
-        isBest       = valTotalLoss < bestValLoss
+        isBest = valTotalLoss < bestValLoss
 
         if isBest:
             bestValLoss = valTotalLoss
             torch.save(model.state_dict(), runDir / 'bestModel.pth')
 
         epochRow = {
-            'runId':          runId,
-            'epoch':          epoch + 1,
-            'trainLoss':      round(trainTotalLoss, 4),
-            'valLoss':        round(valTotalLoss,   4),
-            'objRecallPct':   round(objRecall,      2),
-            'valConfLoss':    round(valConfLoss,    4),
-            'valBboxLoss':    round(valBboxLoss,    4),
-            'valClassLoss':   round(valClassLoss,   4),
-            'learningRate':   currentLr,
+            'runId': runId,
+            'epoch': epoch + 1,
+            'trainLoss': round(trainTotalLoss, 4),
+            'valLoss': round(valTotalLoss,   4),
+            'objRecallPct': round(objRecall,      2),
+            'valConfLoss': round(valConfLoss,    4),
+            'valBboxLoss': round(valBboxLoss,    4),
+            'valClassLoss': round(valClassLoss,   4),
+            'learningRate': currentLr,
             'epochDurationS': round(epochDuration,  1),
-            'isBestEpoch':    int(isBest),
+            'isBestEpoch': int(isBest),
         }
         history.append(epochRow)
         appendEpochRow(modelsDir / 'trainingHistory.csv', epochRow)
