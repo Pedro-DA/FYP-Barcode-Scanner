@@ -62,11 +62,11 @@ def saveRunMetadata(metaCsvPath, runId, config):
         writer.writerow(row)
 
 def plotTrainingCurves(history, runDir):
-    epochs = [r['epoch']          for r in history]
-    trainLoss = [r['trainLoss']      for r in history]
-    valLoss = [r['valLoss']        for r in history]
+    epochs = [r['epoch'] for r in history]
+    trainLoss = [r['trainLoss'] for r in history]
+    valLoss = [r['valLoss'] for r in history]
     valRecall = [r['objRecallPct'] for r in history]
-    lr = [r['learningRate']   for r in history]
+    lr = [r['learningRate'] for r in history]
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
     fig.suptitle(f"Training Curves — {runDir.name}", fontsize=13)
@@ -116,14 +116,14 @@ def train(model, trainLoader, valLoader, config):
     runDir.mkdir(parents=True, exist_ok=True)
 
     saveRunMetadata(modelsDir / 'runsMetadata.csv', runId, {
-        'modelVariant':    config.get('modelVariant',   ''),
-        'datasetVersion':  config.get('datasetVersion', ''),
-        'numEpochs':       config['numEpochs'],
-        'batchSize':       config.get('batchSize',      ''),
-        'learningRate':    config['lr'],
+        'modelVariant': config.get('modelVariant',   ''),
+        'datasetVersion': config.get('datasetVersion', ''),
+        'numEpochs': config['numEpochs'],
+        'batchSize': config.get('batchSize',      ''),
+        'learningRate': config['lr'],
         'coordLossWeight': config.get('lambdaCoord', 5.0),
         'noobjLossWeight': config.get('lambdaNoobj', 0.5),
-        'notes':           config.get('notes',          ''),
+        'notes': config.get('notes',          ''),
     })
 
     optimizer = optim.SGD(model.parameters(), lr=config['lr'], momentum=0.9, weight_decay=1e-4)
@@ -218,13 +218,13 @@ def train(model, trainLoader, valLoader, config):
             'runId': runId,
             'epoch': epoch + 1,
             'trainLoss': round(trainTotalLoss, 4),
-            'valLoss': round(valTotalLoss,   4),
-            'objRecallPct': round(objRecall,      2),
-            'valConfLoss': round(valConfLoss,    4),
-            'valBboxLoss': round(valBboxLoss,    4),
-            'valClassLoss': round(valClassLoss,   4),
+            'valLoss': round(valTotalLoss, 4),
+            'objRecallPct': round(objRecall, 2),
+            'valConfLoss': round(valConfLoss, 4),
+            'valBboxLoss': round(valBboxLoss, 4),
+            'valClassLoss': round(valClassLoss, 4),
             'learningRate': currentLr,
-            'epochDurationS': round(epochDuration,  1),
+            'epochDurationS': round(epochDuration, 1),
             'isBestEpoch': int(isRunBest),
             'isCrossRunBest': int(isBest),
         }

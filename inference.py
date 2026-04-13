@@ -3,6 +3,8 @@ import time
 import torch
 from pathlib import Path
 from model import GridDetectionNet
+import zxingcpp
+import numpy as np
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 numToLabels = {0: "barcode", 1: "qr"}
@@ -47,6 +49,36 @@ def decodeGrid(output, origH, origW, confThreshold=0.5):
             detections.append((label, (x1, y1, x2, y2), conf))
 
     return detections
+
+def decodeCrop(bgrFrame, bbox):
+    x1, y1, x2, y2 = bbox
+    x1, y1 = max(0, x1), max(0, y1)
+    x2, y2 = min(bgrFrame.shape[1], x2), min(bgrFrame.shape[0], y2)
+    if x2 <= x1 or y2 <= y1:
+        return None
+    crop = bgrFrame[y1:y2, x1:x2]
+    results = zxingcpp.read_barcodes(crop)
+    return results[0].text if results else None
+
+def parseDecodeString(text):
+    if text is None:
+        return None
+    if text.startswith(("http://", "https://")):
+        from urllib.parse import urlparse
+        return urlparse(text).netloc or text
+    if text.startswith("WIFI:"):
+        for part in text.split(";"):
+            if part.startswith("S:"):
+                return part[2:]
+        return "WiFi"
+    if text.startswith("BEGIN:VCARD"):
+        for line in text.splitlines():
+            if line.startswith("FN:"):
+                return line[3:]
+        return "vCard"
+    if len(text) <= 40:
+        return text
+    return f"{len(text)} chars"
 
 def computeIou(box1, box2):
     x1 = max(box1[0], box2[0])

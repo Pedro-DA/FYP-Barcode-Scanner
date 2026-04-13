@@ -8,10 +8,10 @@ class GridDetectionNet(nn.Module):
 
         # Shared CNN Backbone
         self.backbone = nn.Sequential(
-            self.convBlock(in_channels,  hidden_units),        # block 1
-            self.convBlock(hidden_units, hidden_units * 2),    # block 2
-            self.convBlock(hidden_units * 2, hidden_units * 4),# block 3
-            self.convBlock(hidden_units * 4, hidden_units * 8),# block 4
+            self.convBlock(in_channels,  hidden_units), # block 1
+            self.convBlock(hidden_units, hidden_units * 2), # block 2
+            self.convBlock(hidden_units * 2, hidden_units * 4), # block 3
+            self.convBlock(hidden_units * 4, hidden_units * 8), # block 4
         )
 
         self.spatialPool = nn.AdaptiveAvgPool2d((S, S))
@@ -34,8 +34,8 @@ class GridDetectionNet(nn.Module):
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.backbone(x)
-        x = self.spatialPool(x)        # (batch, C, S, S)
-        x = self.detectionHead(x)      # (batch, 6, S, S)
+        x = self.spatialPool(x) # (batch, C, S, S)
+        x = self.detectionHead(x) # (batch, 6, S, S)
         x = torch.sigmoid(x)
-        x = x.permute(0, 2, 3, 1)     # (batch, S, S, 6)
+        x = x.permute(0, 2, 3, 1) # (batch, S, S, 6)
         return x

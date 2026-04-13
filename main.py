@@ -2,16 +2,18 @@ import argparse
 import cv2
 import matplotlib.pyplot as plt
 import torch
-
+import numpy as np
 from dataset import buildDataloaders
 from model import GridDetectionNet
 from train import train
-from inference import loadModel, runInference
+from inference import loadModel, runInference, decodeCrop, parseDecodeString
 
-def drawDetections(frame, detections):
-    for label, (x1, y1, x2, y2), conf in detections:
+def drawDetections(frame, detections, decoded=None):
+    for i, (label, (x1, y1, x2, y2), conf) in enumerate(detections):
+        summary = decoded[i] if decoded else None
+        overlayText = f"{label} {conf:.2f}" if summary is None else f"{label} {conf:.2f} | {summary}"
         cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-        cv2.putText(frame, f"{label} {conf:.2f}", (x1, y1 - 8),
+        cv2.putText(frame, overlayText, (x1, y1 - 8),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
     return frame
 
@@ -21,10 +23,14 @@ def singleImage(imagePath, modelPath=None):
     detections, latencyMs = runInference(model, frame)
 
     print(f"Detections: {len(detections)}  |  Latency: {latencyMs:.1f} ms")
+    decoded = []
     for label, bbox, conf in detections:
-        print(f"  {label}  conf={conf:.3f}  bbox={bbox}")
+        text = decodeCrop(frame, bbox)
+        summary = parseDecodeString(text)
+        decoded.append(summary)
+        print(f"  {label}  conf={conf:.3f}  bbox={bbox}  decoded={text}")
 
-    frame = drawDetections(frame, detections)
+    frame = drawDetections(frame, detections, decoded)
     plt.imshow(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
     plt.axis('off')
     plt.show()
