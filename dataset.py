@@ -144,7 +144,7 @@ def buildDataloaders(batchSize=32, testSize=0.2, randomState=43, S=8, cache=Fals
     valDataset   = datasetClass(valSamples,   S=S)
 
 
-    trainLoader = DataLoader(trainDataset, batch_size=batchSize, shuffle=True)
-    valLoader = DataLoader(valDataset, batch_size=batchSize, shuffle=False)
+    trainLoader = DataLoader(trainDataset, batch_size=batchSize, shuffle=True, pin_memory=True)
+    valLoader = DataLoader(valDataset, batch_size=batchSize, shuffle=False, pin_memory=True)
 
     return trainLoader, valLoader
