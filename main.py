@@ -35,10 +35,12 @@ def trainModel(cache=False, datasetPath='Dataset/BarBeR'):
     model = GridDetectionNet().to(device)
     config = {
         'numEpochs': 100,
-        'lr': 0.01,
+        'lr': 0.005,
         'lambdaCoord': 5.0,
         'lambdaNoobj': 0.5,
         'batchSize': 64,
+        'tMax': 30,
+        'earlyStoppingPatience': 20,
     }
     train(model, trainLoader, valLoader, config)
 

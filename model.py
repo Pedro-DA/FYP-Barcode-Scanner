@@ -19,6 +19,7 @@ class GridDetectionNet(nn.Module):
         self.detectionHead = nn.Sequential(
             nn.Conv2d(hidden_units * 8, hidden_units * 4, kernel_size=3, padding=1),
             nn.ReLU(),
+            nn.Dropout2d(p=0.1),
             nn.Conv2d(hidden_units * 4, 6, kernel_size=1),
         )
 
@@ -26,6 +27,7 @@ class GridDetectionNet(nn.Module):
     def convBlock(in_channels: int, out_channels: int) -> nn.Sequential:
         return nn.Sequential(
             nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1),
+            nn.BatchNorm2d(out_channels),
             nn.ReLU(),
             nn.MaxPool2d(kernel_size=2, stride=2)
         )

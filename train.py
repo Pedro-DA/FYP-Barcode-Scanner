@@ -17,7 +17,7 @@ def yoloLoss(pred, target, lambdaCoord=5.0, lambdaNoobj=0.5):
     nobjMask = ~objMask
 
     # Confidence — BCE, downweight no-obj cells
-    rawConfLoss = F.binary_cross_entropy(pred[..., 0].float(), target[..., 0].float(), reduction='none')
+    rawConfLoss = F.binary_cross_entropy(pred[..., 0], target[..., 0], reduction='none')
     confLoss = (objMask.float() * rawConfLoss + lambdaNoobj * nobjMask.float() * rawConfLoss).sum()
 
     # Bbox — MSE with sqrt on w/h, only obj cells
@@ -33,7 +33,7 @@ def yoloLoss(pred, target, lambdaCoord=5.0, lambdaNoobj=0.5):
     classLoss = torch.tensor(0.0, device=pred.device)
     if objMask.any():
         classLoss = F.binary_cross_entropy(
-            pred[objMask][..., 5].float(), target[objMask][..., 5].float(), reduction='sum'
+            pred[objMask][..., 5], target[objMask][..., 5], reduction='sum'
         )
 
 
@@ -126,10 +126,11 @@ def train(model, trainLoader, valLoader, config):
         'notes':           config.get('notes',          ''),
     })
 
-    optimizer = optim.SGD(model.parameters(), lr=config['lr'], momentum=0.9)
-    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', patience=10, factor=0.5
+    optimizer = optim.SGD(model.parameters(), lr=config['lr'], momentum=0.9, weight_decay=1e-4)
+    scheduler = optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=config.get('tMax', 'numEpochs'), eta_min=1e-6
     )
+
 
     #loading universal best run loss value
     bestLossPath = modelsDir / 'bestValLoss.json'
@@ -137,11 +138,14 @@ def train(model, trainLoader, valLoader, config):
         with open(bestLossPath) as f:
             bestValLoss = json.load(f)['valLoss']
         print(f"Loaded cross-run best val loss: {bestValLoss:.4f}")
+        print(f"  (from {bestLossPath.resolve()})")
     else:
         bestValLoss = float('inf')
+    #individual best run
+    runBestValLoss = float('inf')
     history = []
-
-    history     = []
+    patience = config.get('earlyStoppingPatience', 15)
+    epochsWithoutImprovement = 0
 
     for epoch in range(config['numEpochs']):
         epochStart = time.time()
@@ -158,10 +162,10 @@ def train(model, trainLoader, valLoader, config):
         for imgs, targets in trainLoader:
             imgs, targets = imgs.to(device), targets.to(device)
             optimizer.zero_grad(set_to_none=True)
-            with torch.autocast(device_type=device.type, dtype=torch.float16 if device.type == 'cuda' else torch.bfloat16):
-                pred = model(imgs)
+            pred = model(imgs)
             loss, _, _, _ = yoloLoss(pred.float(), targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
             loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
             optimizer.step()
             trainTotalLoss += loss.item()
 
@@ -170,8 +174,7 @@ def train(model, trainLoader, valLoader, config):
         with torch.no_grad():
             for imgs, targets in valLoader:
                 imgs, targets = imgs.to(device), targets.to(device)
-                with torch.autocast(device_type=device.type, dtype=torch.float16 if device.type == 'cuda' else torch.bfloat16):
-                    pred = model(imgs)
+                pred = model(imgs)
                 loss, cLoss, bLoss, klLoss = yoloLoss(pred.float(), targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
 
                 valTotalLoss += loss.item()
@@ -184,18 +187,31 @@ def train(model, trainLoader, valLoader, config):
                 correctObjCells += (pred[..., 0][objMask] > 0.5).sum().item()
 
         currentLr = optimizer.param_groups[0]['lr']
-        scheduler.step(valTotalLoss)
+        scheduler.step()
 
         objRecall = (correctObjCells / totalObjCells * 100) if totalObjCells > 0 else 0.0
         epochDuration = time.time() - epochStart
-        isBest = valTotalLoss < bestValLoss
+        numValBatches = len(valLoader)
+        avgValLoss = valTotalLoss / numValBatches
+        isBest = avgValLoss < bestValLoss
+        isRunBest = avgValLoss < runBestValLoss
+
+        if isRunBest:
+            runBestValLoss = avgValLoss
+            torch.save(model.state_dict(), runDir / 'bestModel.pth')
+
 
         if isBest:
-            bestValLoss = valTotalLoss
-            torch.save(model.state_dict(), runDir / 'bestModel.pth')
+            bestValLoss = avgValLoss
             torch.save(model.state_dict(), modelsDir / 'bestModel.pth')
             with open(modelsDir / 'bestValLoss.json', 'w') as f:
-                json.dump({'valLoss': bestValLoss, 'runId': runId}, f)
+                json.dump({'valLoss': avgValLoss, 'runId': runId}, f)
+            epochsWithoutImprovement = 0
+        else:
+            epochsWithoutImprovement += 1
+            if epochsWithoutImprovement >= patience:
+                print(f"Early stopping at epoch {epoch + 1}")
+                break
 
 
         epochRow = {
@@ -209,7 +225,8 @@ def train(model, trainLoader, valLoader, config):
             'valClassLoss': round(valClassLoss,   4),
             'learningRate': currentLr,
             'epochDurationS': round(epochDuration,  1),
-            'isBestEpoch': int(isBest),
+            'isBestEpoch': int(isRunBest),
+            'isCrossRunBest': int(isBest),
         }
         history.append(epochRow)
         appendEpochRow(modelsDir / 'trainingHistory.csv', epochRow)
@@ -220,6 +237,7 @@ def train(model, trainLoader, valLoader, config):
               f"Recall: {objRecall:.1f}% | "
               f"LR: {currentLr:.2e} | "
               f"{'*' if isBest else ' '} "
+              f"{'*' if isRunBest else ' '} "
               f"{epochDuration:.0f}s")
 
     with open(runDir / 'training_history.json', 'w') as f:
