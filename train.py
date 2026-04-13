@@ -128,10 +128,19 @@ def train(model, trainLoader, valLoader, config):
 
     optimizer = optim.SGD(model.parameters(), lr=config['lr'], momentum=0.9)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', patience=3, factor=0.1
+        optimizer, mode='min', patience=10, factor=0.5
     )
 
-    bestValLoss = float('inf')
+    #loading universal best run loss value
+    bestLossPath = modelsDir / 'bestValLoss.json'
+    if bestLossPath.exists():
+        with open(bestLossPath) as f:
+            bestValLoss = json.load(f)['valLoss']
+        print(f"Loaded cross-run best val loss: {bestValLoss:.4f}")
+    else:
+        bestValLoss = float('inf')
+    history = []
+
     history     = []
 
     for epoch in range(config['numEpochs']):
@@ -164,7 +173,7 @@ def train(model, trainLoader, valLoader, config):
                 with torch.autocast(device_type=device.type, dtype=torch.float16 if device.type == 'cuda' else torch.bfloat16):
                     pred = model(imgs)
                 loss, cLoss, bLoss, klLoss = yoloLoss(pred.float(), targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
-                
+
                 valTotalLoss += loss.item()
                 valConfLoss += cLoss
                 valBboxLoss += bLoss
@@ -184,6 +193,10 @@ def train(model, trainLoader, valLoader, config):
         if isBest:
             bestValLoss = valTotalLoss
             torch.save(model.state_dict(), runDir / 'bestModel.pth')
+            torch.save(model.state_dict(), modelsDir / 'bestModel.pth')
+            with open(modelsDir / 'bestValLoss.json', 'w') as f:
+                json.dump({'valLoss': bestValLoss, 'runId': runId}, f)
+
 
         epochRow = {
             'runId': runId,
