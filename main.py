@@ -9,13 +9,21 @@ from train import train
 from inference import loadModel, runInference, decodeCrop, parseDecodeString, computeIou
 
 def drawDetections(frame, detections, decoded=None):
-    for i, (label, (x1, y1, x2, y2), conf) in enumerate(detections):
+    for i, (label, (x1, y1, x2, y2), conf, angle) in enumerate(detections):
         summary = decoded[i] if decoded else None
         overlayText = f"{label} {conf:.2f}" if summary is None else f"{label} {conf:.2f} | {summary}"
-        cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+
+        cx = (x1 + x2) / 2
+        cy = (y1 + y2) / 2
+        w  = x2 - x1
+        h  = y2 - y1
+        box = cv2.boxPoints(((cx, cy), (w, h), angle))
+        box = np.int32(box)
+        cv2.polylines(frame, [box], isClosed=True, color=(0, 255, 0), thickness=2)
         cv2.putText(frame, overlayText, (x1, y1 - 8),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
     return frame
+
 
 def singleImage(imagePath, modelPath=None):
     model = loadModel(modelPath)

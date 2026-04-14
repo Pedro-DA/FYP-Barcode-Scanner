@@ -36,10 +36,15 @@ def yoloLoss(pred, target, lambdaCoord=5.0, lambdaNoobj=0.5):
             pred[objMask][..., 5], target[objMask][..., 5], reduction='sum'
         )
 
+    angleLoss = torch.tensor(0.0, device=pred.device)
+    if objMask.any():
+        angleLoss = F.mse_loss(
+            pred[objMask][..., 6], target[objMask][..., 6], reduction='sum'
+    )
 
     batchSize = pred.shape[0]
-    total = (confLoss + bboxLoss + classLoss) / batchSize
-    return total, confLoss.item() / batchSize, bboxLoss.item() / batchSize, classLoss.item() / batchSize
+    total = (confLoss + bboxLoss + classLoss + angleLoss) / batchSize
+    return total, confLoss.item() / batchSize, bboxLoss.item() / batchSize, classLoss.item() / batchSize, angleLoss.item() / batchSize
 
 def generateRunId():
     return datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -163,7 +168,7 @@ def train(model, trainLoader, valLoader, config):
             imgs, targets = imgs.to(device), targets.to(device)
             optimizer.zero_grad(set_to_none=True)
             pred = model(imgs)
-            loss, _, _, _ = yoloLoss(pred.float(), targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
+            loss, _, _, _, _ = yoloLoss(pred.float(), targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
             optimizer.step()
@@ -175,7 +180,7 @@ def train(model, trainLoader, valLoader, config):
             for imgs, targets in valLoader:
                 imgs, targets = imgs.to(device), targets.to(device)
                 pred = model(imgs)
-                loss, cLoss, bLoss, klLoss = yoloLoss(pred.float(), targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
+                loss, cLoss, bLoss, klLoss, _ = yoloLoss(pred.float(), targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
 
                 valTotalLoss += loss.item()
                 valConfLoss += cLoss
