@@ -1,7 +1,7 @@
 import json
 import random
 from pathlib import Path
-
+import numpy as np
 import cv2
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -54,7 +54,8 @@ def parseBarBeRJson(datasetPath='Dataset/BarBeR'):
                     'xmin': min(xs),
                     'ymin': min(ys),
                     'xmax': max(xs),
-                    'ymax': max(ys)
+                    'ymax': max(ys),
+                    'points': list(zip(xs, ys))
                 })
 
             if objects:
@@ -63,7 +64,7 @@ def parseBarBeRJson(datasetPath='Dataset/BarBeR'):
     return samples
 
 def encodeLabelGrid(objects, imgW, imgH, S=8):
-    target = torch.zeros((S, S, 6))
+    target = torch.zeros((S, S, 7))
 
     for obj in objects:
         cx = (obj['xmin'] + obj['xmax']) / 2 / imgW
@@ -79,8 +80,12 @@ def encodeLabelGrid(objects, imgW, imgH, S=8):
 
         # only write if cell is empty (first object wins on collision)
         if target[cellY, cellX, 0] == 0:
+            pts = np.array(obj['points'], dtype=np.float32)
+            rect = cv2.minAreaRect(pts)
+            angleNorm = abs(rect[2]) / 90.0
+
             target[cellY, cellX] = torch.tensor([
-                1.0, offsetX, offsetY, w, h, float(obj['class'])
+                1.0, offsetX, offsetY, w, h, float(obj['class']), angleNorm
             ])
 
     return target
