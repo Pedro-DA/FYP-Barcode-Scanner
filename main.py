@@ -6,7 +6,7 @@ import numpy as np
 from dataset import buildDataloaders
 from model import GridDetectionNet
 from train import train
-from inference import loadModel, runInference, decodeCrop, parseDecodeString
+from inference import loadModel, runInference, decodeCrop, parseDecodeString, computeIou
 
 def drawDetections(frame, detections, decoded=None):
     for i, (label, (x1, y1, x2, y2), conf) in enumerate(detections):
@@ -42,14 +42,49 @@ def liveCamera(modelPath=None):
         print("Error: could not open camera")
         return
 
+    cache = {}
+    nextId = 0
+    iouEvictThreshold = 0.3
+    maxFramesMissing = 10
+
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
         detections, latencyMs = runInference(model, frame)
-        frame = drawDetections(frame, detections)
 
+        for entry in cache.values():
+            entry['framesMissing'] += 1
+
+        decoded = []
+        for label, bbox, conf in detections:
+            matched = None
+            for entry in cache.values():
+                if computeIou(bbox, entry['bbox']) >= iouEvictThreshold:
+                    matched = entry
+                    break
+
+            if matched is not None:
+                matched['bbox'] = bbox
+                matched['label'] = label
+                matched['conf'] = conf
+                matched['framesMissing'] = 0
+                if matched['text'] is None:
+                    matched['text'] = decodeCrop(frame, bbox)
+                decoded.append(parseDecodeString(matched['text']))
+            else:
+                text = decodeCrop(frame, bbox)
+                cache[nextId] = {
+                    'bbox': bbox, 'label': label, 'conf': conf,
+                    'text': text, 'framesMissing': 0
+                }
+                nextId += 1
+                decoded.append(parseDecodeString(text))
+
+        cache = {k: v for k, v in cache.items() if v['framesMissing'] <= maxFramesMissing}
+
+        frame = drawDetections(frame, detections, decoded)
         cv2.putText(frame, f"{latencyMs:.1f} ms", (10, 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
 
