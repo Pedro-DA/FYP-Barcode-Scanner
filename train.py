@@ -143,7 +143,6 @@ def train(model, trainLoader, valLoader, config):
         with open(bestLossPath) as f:
             bestValLoss = json.load(f)['valLoss']
         print(f"Loaded cross-run best val loss: {bestValLoss:.4f}")
-        print(f"  (from {bestLossPath.resolve()})")
     else:
         bestValLoss = float('inf')
     #individual best run
