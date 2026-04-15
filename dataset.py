@@ -172,7 +172,22 @@ class cachedBarcodeDataset(Dataset):
             if img is None:
                 continue
             imgH, imgW = img.shape[:2]
-            self.cache.append((img, sample['objects'], imgW, imgH))
+            scaleX = 128 / imgW
+            scaleY = 128 / imgH
+            img = cv2.resize(img, (128, 128))
+            scaledObjects = []
+            for obj in sample['objects']:
+                scaledPts = [(x * scaleX, y * scaleY) for x, y in obj['points']]
+                scaledObjects.append({
+                    **obj,
+                    'xmin': obj['xmin'] * scaleX,
+                    'xmax': obj['xmax'] * scaleX,
+                    'ymin': obj['ymin'] * scaleY,
+                    'ymax': obj['ymax'] * scaleY,
+                    'points': scaledPts,
+                })
+            self.cache.append((img, scaledObjects, 128, 128))
+
 
     def __len__(self):
         return len(self.cache)
@@ -184,7 +199,6 @@ class cachedBarcodeDataset(Dataset):
         if self.augment:
             img, objects = augmentSample(img, objects, imgW, imgH)
 
-        img = cv2.resize(img, (128, 128))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         img = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
         target = encodeLabelGrid(objects, imgW, imgH, self.S)

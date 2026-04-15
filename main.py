@@ -66,7 +66,7 @@ def liveCamera(modelPath=None):
             entry['framesMissing'] += 1
 
         decoded = []
-        for label, bbox, conf in detections:
+        for label, bbox, conf, angle in detections:
             matched = None
             for entry in cache.values():
                 if computeIou(bbox, entry['bbox']) >= iouEvictThreshold:
@@ -114,6 +114,7 @@ def trainModel(cache=False, datasetPath='Dataset/BarBeR'):
         'lr': 0.005,
         'lambdaCoord': 5.0,
         'lambdaNoobj': 0.5,
+        'lambdaAngle': 0.25,
         'batchSize': 64,
         'tMax': 30,
         'earlyStoppingPatience': 20,

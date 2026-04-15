@@ -9,10 +9,10 @@ import numpy as np
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 numToLabels = {0: "barcode", 1: "qr"}
 
-def loadModel(modelPath, S=8, hiddenUnits=32):
+def loadModel(modelPath, S=8):
     if modelPath is None:
         modelPath = Path(__file__).parent / "models" / "bestModel.pth"
-    model = GridDetectionNet(S=S, hidden_units=hiddenUnits).to(device)
+    model = GridDetectionNet(S=S).to(device)
     model.load_state_dict(torch.load(modelPath, map_location=device))
     model.eval()
     return model

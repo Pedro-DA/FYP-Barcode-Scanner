@@ -11,10 +11,14 @@ import torch.optim as optim
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-def yoloLoss(pred, target, lambdaCoord=5.0, lambdaNoobj=0.5):
+def yoloLoss(pred, target, config):
     # pred, target: (batch, S, S, 6) — [conf, x, y, w, h, class]
     objMask  = target[..., 0] == 1   # (batch, S, S) bool
     nobjMask = ~objMask
+
+    lambdaCoord = config.get('lambdaCoord', 5.0)
+    lambdaNoobj = config.get('lambdaNoobj', 0.5)
+    lambdaAngle = config.get('lambdaAngle', 1.0)
 
     # Confidence — BCE, downweight no-obj cells
     rawConfLoss = F.binary_cross_entropy(pred[..., 0], target[..., 0], reduction='none')
@@ -38,9 +42,10 @@ def yoloLoss(pred, target, lambdaCoord=5.0, lambdaNoobj=0.5):
 
     angleLoss = torch.tensor(0.0, device=pred.device)
     if objMask.any():
-        angleLoss = F.mse_loss(
+        angleLoss = lambdaAngle * F.mse_loss(
             pred[objMask][..., 6], target[objMask][..., 6], reduction='sum'
-    )
+        )
+
 
     batchSize = pred.shape[0]
     total = (confLoss + bboxLoss + classLoss + angleLoss) / batchSize
@@ -72,8 +77,9 @@ def plotTrainingCurves(history, runDir):
     valLoss = [r['valLoss'] for r in history]
     valRecall = [r['objRecallPct'] for r in history]
     lr = [r['learningRate'] for r in history]
+    angleLoss = [r['valAngleLoss'] for r in history]
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+    fig, axes = plt.subplots(1, 4, figsize=(20, 4))
     fig.suptitle(f"Training Curves — {runDir.name}", fontsize=13)
 
     axes[0].plot(epochs, trainLoss, label='Train Loss')
@@ -96,6 +102,12 @@ def plotTrainingCurves(history, runDir):
     axes[2].set_title('Learning Rate Schedule')
     axes[2].grid(True)
 
+    axes[3].plot(epochs, angleLoss, color='red')
+    axes[3].set_xlabel('Epoch')
+    axes[3].set_ylabel('Angle Loss')
+    axes[3].set_title('Val Angle Loss')
+    axes[3].grid(True)
+
     plt.tight_layout()
     plt.savefig(runDir / 'trainingCurves.png', dpi=150, bbox_inches='tight')
     plt.close()
@@ -108,6 +120,7 @@ def train(model, trainLoader, valLoader, config):
         lr            float
         lambdaCoord   float   weight on bbox loss (default 5.0)
         lambdaNoobj   float   weight on no-object confidence loss (default 0.5)
+        lambdaAngle   float   weight on angle loss (default 1.0);
 
     Metadata config:
         modelVariant    str
@@ -160,6 +173,7 @@ def train(model, trainLoader, valLoader, config):
         valClassLoss = 0.0
         totalObjCells = 0
         correctObjCells = 0
+        valAngleLoss = 0.0
 
         # Training phase
         model.train()
@@ -167,7 +181,7 @@ def train(model, trainLoader, valLoader, config):
             imgs, targets = imgs.to(device), targets.to(device)
             optimizer.zero_grad(set_to_none=True)
             pred = model(imgs)
-            loss, _, _, _, _ = yoloLoss(pred.float(), targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
+            loss, _, _, _, _ = yoloLoss(pred.float(), targets, config)
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
             optimizer.step()
@@ -179,12 +193,13 @@ def train(model, trainLoader, valLoader, config):
             for imgs, targets in valLoader:
                 imgs, targets = imgs.to(device), targets.to(device)
                 pred = model(imgs)
-                loss, cLoss, bLoss, klLoss, _ = yoloLoss(pred.float(), targets, config.get('lambdaCoord', 5.0), config.get('lambdaNoobj', 0.5))
+                loss, cLoss, bLoss, klLoss, aLoss = yoloLoss(pred.float(), targets, config)
 
                 valTotalLoss += loss.item()
                 valConfLoss += cLoss
                 valBboxLoss += bLoss
                 valClassLoss += klLoss
+                valAngleLoss += aLoss
 
                 objMask = targets[..., 0] == 1
                 totalObjCells   += objMask.sum().item()
@@ -204,7 +219,6 @@ def train(model, trainLoader, valLoader, config):
             runBestValLoss = avgValLoss
             torch.save(model.state_dict(), runDir / 'bestModel.pth')
 
-
         if isBest:
             bestValLoss = avgValLoss
             torch.save(model.state_dict(), modelsDir / 'bestModel.pth')
@@ -216,7 +230,6 @@ def train(model, trainLoader, valLoader, config):
             if epochsWithoutImprovement >= patience:
                 print(f"Early stopping at epoch {epoch + 1}")
                 break
-
 
         epochRow = {
             'runId': runId,
@@ -231,6 +244,7 @@ def train(model, trainLoader, valLoader, config):
             'epochDurationS': round(epochDuration, 1),
             'isBestEpoch': int(isRunBest),
             'isCrossRunBest': int(isBest),
+            'valAngleLoss': round(valAngleLoss, 4),
         }
         history.append(epochRow)
         appendEpochRow(modelsDir / 'trainingHistory.csv', epochRow)
