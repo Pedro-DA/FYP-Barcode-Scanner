@@ -43,7 +43,7 @@ def yoloLoss(pred, target, config):
     angleLoss = torch.tensor(0.0, device=pred.device)
     if objMask.any():
         angleLoss = lambdaAngle * F.mse_loss(
-            pred[objMask][..., 6], target[objMask][..., 6], reduction='sum'
+            pred[objMask][..., 6:8], target[objMask][..., 6:8], reduction='sum'
         )
 
 
@@ -144,9 +144,9 @@ def train(model, trainLoader, valLoader, config):
         'notes': config.get('notes',          ''),
     })
 
-    optimizer = optim.SGD(model.parameters(), lr=config['lr'], momentum=0.9, weight_decay=1e-4)
+    optimizer = optim.SGD(model.parameters(), lr=config['lr'], momentum=config.get('momentum', 0.9), weight_decay=config.get('weightDecay', 1e-4))
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=config.get('tMax', config['numEpochs']), eta_min=1e-6
+        optimizer, T_max=config.get('tMax', config['numEpochs']), eta_min=config.get('etaMin', 1e-6)
     )
 
 
@@ -183,7 +183,7 @@ def train(model, trainLoader, valLoader, config):
             pred = model(imgs)
             loss, _, _, _, _ = yoloLoss(pred.float(), targets, config)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=config.get('gradClipNorm', 10.0))
             optimizer.step()
             trainTotalLoss += loss.item()
 
@@ -218,23 +218,23 @@ def train(model, trainLoader, valLoader, config):
         if isRunBest:
             runBestValLoss = avgValLoss
             torch.save(model.state_dict(), runDir / 'bestModel.pth')
-
-        if isBest:
-            bestValLoss = avgValLoss
-            torch.save(model.state_dict(), modelsDir / 'bestModel.pth')
-            with open(modelsDir / 'bestValLoss.json', 'w') as f:
-                json.dump({'valLoss': avgValLoss, 'runId': runId}, f)
-            epochsWithoutImprovement = 0
+            epochsWithoutImprovement = 0   # ← move here
         else:
             epochsWithoutImprovement += 1
             if epochsWithoutImprovement >= patience:
                 print(f"Early stopping at epoch {epoch + 1}")
                 break
 
+        if isBest:
+            bestValLoss = avgValLoss
+            torch.save(model.state_dict(), modelsDir / 'bestModel.pth')
+            with open(modelsDir / 'bestValLoss.json', 'w') as f:
+                json.dump({'valLoss': avgValLoss, 'runId': runId}, f)
+
         epochRow = {
             'runId': runId,
             'epoch': epoch + 1,
-            'trainLoss': round(trainTotalLoss, 4),
+            'trainLoss': round(trainTotalLoss / len(trainLoader), 4),
             'valLoss': round(valTotalLoss, 4),
             'objRecallPct': round(objRecall, 2),
             'valConfLoss': round(valConfLoss, 4),

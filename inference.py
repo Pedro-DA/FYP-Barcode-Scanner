@@ -30,7 +30,7 @@ def decodeGrid(output, origH, origW, confThreshold=0.5):
 
     for row in range(S):
         for col in range(S):
-            cell = output[0, row, col]  # (6,)
+            cell = output[0, row, col]  # (8,)
             conf = cell[0].item()
             if conf < confThreshold:
                 continue
@@ -46,7 +46,9 @@ def decodeGrid(output, origH, origW, confThreshold=0.5):
             y2 = int(cy + h / 2)
 
             label = "qr" if cell[5].item() > 0.5 else "barcode"
-            angle = cell[6].item() * 45.0
+            sinVal = cell[6].item() * 2 - 1
+            cosVal = cell[7].item() * 2 - 1
+            angle  = np.degrees(np.arctan2(sinVal, cosVal)) / 2
             detections.append((label, (x1, y1, x2, y2), conf, angle))
 
     return detections

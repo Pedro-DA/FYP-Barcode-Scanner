@@ -75,6 +75,10 @@ def augmentSample(img, objects, imgW, imgH):
         factor = random.uniform(0.6, 1.4)   # brightness
         img = np.clip(img.astype(np.float32) * factor, 0, 255).astype(np.uint8)
 
+        mean = img.mean()
+        contrast = random.uniform(0.8, 1.2)
+        img = np.clip((img - mean) * contrast + mean, 0, 255).astype(np.uint8)
+
     return img, objects
 
 def parseBarBeRJson(datasetPath='Dataset/BarBeR'):
@@ -127,7 +131,7 @@ def parseBarBeRJson(datasetPath='Dataset/BarBeR'):
     return samples
 
 def encodeLabelGrid(objects, imgW, imgH, S=8):
-    target = torch.zeros((S, S, 7))
+    target = torch.zeros((S, S, 8))
 
     for obj in objects:
         cx = (obj['xmin'] + obj['xmax']) / 2 / imgW
@@ -145,13 +149,12 @@ def encodeLabelGrid(objects, imgW, imgH, S=8):
         if target[cellY, cellX, 0] == 0:
             pts = np.array(obj['points'], dtype=np.float32)
             rect = cv2.minAreaRect(pts)
-            angle = abs(rect[2])          # handles old/new OpenCV sign convention → [0, 90]
-            if angle > 45:
-                angle = 90 - angle        # fold: 60° → 30°, 70° → 20°, etc.
-            angleNorm = angle / 45.0      # normalize to [0, 1] over [0°, 45°]
+            angle_rad = np.deg2rad(rect[2] * 2)   # double the angle for 180° symmetry
+            sinEnc = (np.sin(angle_rad) + 1) / 2  # shift [-1,1] → [0,1] for sigmoid
+            cosEnc = (np.cos(angle_rad) + 1) / 2
 
             target[cellY, cellX] = torch.tensor([
-                1.0, offsetX, offsetY, w, h, float(obj['class']), angleNorm
+                1.0, offsetX, offsetY, w, h, float(obj['class']), sinEnc, cosEnc
             ])
 
     return target

@@ -114,10 +114,14 @@ def trainModel(cache=False, datasetPath='Dataset/BarBeR'):
         'lr': 0.005,
         'lambdaCoord': 5.0,
         'lambdaNoobj': 0.5,
-        'lambdaAngle': 0.25,
+        'lambdaAngle': 0.125,
+        'weightDecay': 1e-3,
+        'gradClipNorm': 10,
+        'etaMin': 1e-6,
         'batchSize': 64,
-        'tMax': 30,
+        'tMax': 100,
         'earlyStoppingPatience': 20,
+        'momentum': 0.9,
     }
     train(model, trainLoader, valLoader, config)
 

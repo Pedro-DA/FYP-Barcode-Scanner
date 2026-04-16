@@ -19,8 +19,8 @@ class GridDetectionNet(nn.Module):
         self.detectionHead = nn.Sequential(
             nn.Conv2d(hidden_units * 8, hidden_units * 4, kernel_size=3, padding=1),
             nn.ReLU(),
-            nn.Dropout2d(p=0.1),
-            nn.Conv2d(hidden_units * 4, 7, kernel_size=1),
+            nn.Dropout2d(p=0.2),
+            nn.Conv2d(hidden_units * 4, 8, kernel_size=1),
         )
 
     @staticmethod
