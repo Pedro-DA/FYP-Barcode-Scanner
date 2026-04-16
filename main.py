@@ -32,7 +32,7 @@ def singleImage(imagePath, modelPath=None):
 
     print(f"Detections: {len(detections)}  |  Latency: {latencyMs:.1f} ms")
     decoded = []
-    for label, bbox, conf in detections:
+    for label, bbox, conf, angle in detections:
         text = decodeCrop(frame, bbox)
         summary = parseDecodeString(text)
         decoded.append(summary)

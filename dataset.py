@@ -7,12 +7,30 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 BARBER_CLASS_MAP = {
-    'Code 128': 0, 'Code 39': 0, 'EAN-2': 0, 'EAN-8': 0, 'EAN-13': 0,
-    'GS1-128': 0, 'IATA 2 of 5': 0, 'Intelligent Mail Barcode': 0,
-    'Interleaved 2 of 5': 0, 'Japan Postal Barcode': 0, 'KIX-code': 0,
-    'PostNet': 0, 'RoyalMail Code': 0, 'UPC': 0, '1D': 0,
-    'Aztec': 1, 'Datamatrix': 1, 'PDF-417': 1, 'QR Code': 1
+    # 1D barcodes → class 0
+    '1D':             0,
+    'C128':           0, 
+    'UCC128':         0, 
+    'C39':            0, 
+    'EAN13':          0,
+    'EAN8':           0,
+    'UPCA':           0,
+    'UPCS':           0,  
+    'I2O5':           0, 
+    'IATA25':         0,  
+    'KIX':            0,
+    'ROYALMAILCODE':  0,
+    'JAPANPOST':      0,
+    'POSTNET':        0,
+    'INTELLIGENTMAIL':0,
+    '2-DIGIT':        0,
+    # 2D barcodes → class 1
+    'QR':             1,
+    'DATAMATRIX':     1,
+    'PDF417':         1,
+    'AZTEC':          1,
 }
+
 
 def augmentSample(img, objects, imgW, imgH):
     # H-flip
@@ -127,7 +145,10 @@ def encodeLabelGrid(objects, imgW, imgH, S=8):
         if target[cellY, cellX, 0] == 0:
             pts = np.array(obj['points'], dtype=np.float32)
             rect = cv2.minAreaRect(pts)
-            angleNorm = abs(rect[2]) / 90.0
+            angle = abs(rect[2])          # handles old/new OpenCV sign convention → [0, 90]
+            if angle > 45:
+                angle = 90 - angle        # fold: 60° → 30°, 70° → 20°, etc.
+            angleNorm = angle / 45.0      # normalize to [0, 1] over [0°, 45°]
 
             target[cellY, cellX] = torch.tensor([
                 1.0, offsetX, offsetY, w, h, float(obj['class']), angleNorm

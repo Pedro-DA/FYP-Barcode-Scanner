@@ -146,7 +146,7 @@ def train(model, trainLoader, valLoader, config):
 
     optimizer = optim.SGD(model.parameters(), lr=config['lr'], momentum=0.9, weight_decay=1e-4)
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=config.get('tMax', 'numEpochs'), eta_min=1e-6
+        optimizer, T_max=config.get('tMax', config['numEpochs']), eta_min=1e-6
     )
 
 
