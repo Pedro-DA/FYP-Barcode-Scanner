@@ -35,7 +35,7 @@ class GridDetectionNet(nn.Module):
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.backbone(x)
         x = self.spatialPool(x) # (batch, C, S, S)
-        x = self.detectionHead(x) # (batch, 6, S, S)
+        x = self.detectionHead(x) # (batch, 8, S, S)
         x = torch.sigmoid(x)
-        x = x.permute(0, 2, 3, 1) # (batch, S, S, 6)
+        x = x.permute(0, 2, 3, 1) # (batch, S, S, 8)
         return x

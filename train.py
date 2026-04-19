@@ -46,7 +46,6 @@ def yoloLoss(pred, target, config):
             pred[objMask][..., 6:8], target[objMask][..., 6:8], reduction='sum'
         )
 
-
     batchSize = pred.shape[0]
     total = (confLoss + bboxLoss + classLoss + angleLoss) / batchSize
     return total, confLoss.item() / batchSize, bboxLoss.item() / batchSize, classLoss.item() / batchSize, angleLoss.item() / batchSize
