@@ -7,6 +7,7 @@ from dataset import buildDataloaders
 from model import GridDetectionNet
 from train import train
 from inference import loadModel, runInference, decodeCrop, parseDecodeString, computeIou
+from telemetry import telemetry
 
 def drawDetections(frame, detections, decoded=None):
     for i, (label, (x1, y1, x2, y2), conf, angle) in enumerate(detections):
@@ -54,19 +55,23 @@ def liveCamera(modelPath=None):
     nextId = 0
     iouEvictThreshold = 0.3
     maxFramesMissing = 10
+    tel = telemetry()
 
     while True:
         ret, frame = cap.read()
         if not ret:
             break
 
-        detections, latencyMs = runInference(model, frame)
+        detections, latencyMs = runInference(model, frame, confThreshold=0.3)
+        tel.recordFrame(latencyMs, detections)
+
+        displayDetections = [d for d in detections if d[2] >= 0.5]
 
         for entry in cache.values():
             entry['framesMissing'] += 1
 
         decoded = []
-        for label, bbox, conf, angle in detections:
+        for label, bbox, conf, angle in displayDetections:
             matched = None
             for entry in cache.values():
                 if computeIou(bbox, entry['bbox']) >= iouEvictThreshold:
@@ -80,9 +85,13 @@ def liveCamera(modelPath=None):
                 matched['framesMissing'] = 0
                 if matched['text'] is None:
                     matched['text'] = decodeCrop(frame, bbox)
+                    if matched['text'] is not None:
+                        tel.markDecoded(label, conf)
                 decoded.append(parseDecodeString(matched['text']))
             else:
                 text = decodeCrop(frame, bbox)
+                if text is not None:
+                    tel.markDecoded(label, conf) 
                 cache[nextId] = {
                     'bbox': bbox, 'label': label, 'conf': conf,
                     'text': text, 'framesMissing': 0
@@ -92,7 +101,7 @@ def liveCamera(modelPath=None):
 
         cache = {k: v for k, v in cache.items() if v['framesMissing'] <= maxFramesMissing}
 
-        frame = drawDetections(frame, detections, decoded)
+        frame = drawDetections(frame, displayDetections, decoded)
         cv2.putText(frame, f"{latencyMs:.1f} ms", (10, 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
 
@@ -104,6 +113,7 @@ def liveCamera(modelPath=None):
 
     cap.release()
     cv2.destroyAllWindows()
+    tel.report() 
 
 def trainModel(cache=False, datasetPath='Dataset/BarBeR'):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
