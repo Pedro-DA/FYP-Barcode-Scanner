@@ -13,9 +13,8 @@ class telemetry:
             self.detections.append({'label': label, 'conf': conf, 'decoded': False})
 
     def markDecoded(self, label, conf):
-        # Call this when a cache entry successfully decodes
-        for d in reversed(self.detections):
-            if d['label'] == label and abs(d['conf'] - conf) < 0.01 and not d['decoded']:
+        for d in reversed(self.detections):  # reversed so we match the most recent detection first
+            if d['label'] == label and abs(d['conf'] - conf) < 0.01 and not d['decoded']:  # fuzzy conf match since floats aren't exact
                 d['decoded'] = True
                 break
 
@@ -24,11 +23,11 @@ class telemetry:
             thresholds = np.arange(0.3, 0.85, 0.05)
         print("\nConf threshold sweep (decode rate):")
         for t in thresholds:
-            above = [d for d in self.detections if d['conf'] >= t]
+            above = [d for d in self.detections if d['conf'] >= t]  # all detections at or above this threshold
             if not above:
                 print(f"  {t:.2f} → no detections")
                 continue
-            rate = sum(d['decoded'] for d in above) / len(above) * 100
+            rate = sum(d['decoded'] for d in above) / len(above) * 100  # what fraction were successfully decoded
             print(f"  {t:.2f} → {rate:.1f}%  ({len(above)} detections)")
 
     def report(self):

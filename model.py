@@ -14,13 +14,13 @@ class GridDetectionNet(nn.Module):
             self.convBlock(hidden_units * 4, hidden_units * 8), # block 4
         )
 
-        self.spatialPool = nn.AdaptiveAvgPool2d((S, S))
+        self.spatialPool = nn.AdaptiveAvgPool2d((S, S))  # forces feature map to exactly SxS regardless of input size
 
         self.detectionHead = nn.Sequential(
             nn.Conv2d(hidden_units * 8, hidden_units * 4, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.Dropout2d(p=0.2),
-            nn.Conv2d(hidden_units * 4, 8, kernel_size=1),
+            nn.Conv2d(hidden_units * 4, 8, kernel_size=1),  # 1x1 conv → 8 outputs per cell: conf,x,y,w,h,class,sin,cos
         )
 
     @staticmethod
@@ -34,8 +34,8 @@ class GridDetectionNet(nn.Module):
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         x = self.backbone(x)
-        x = self.spatialPool(x) # (batch, C, S, S)
-        x = self.detectionHead(x) # (batch, 8, S, S)
-        x = torch.sigmoid(x)
-        x = x.permute(0, 2, 3, 1) # (batch, S, S, 8)
+        x = self.spatialPool(x)    # (batch, C, S, S)
+        x = self.detectionHead(x)  # (batch, 8, S, S)
+        x = torch.sigmoid(x)       # bound all outputs to [0,1] - matches BCE loss and encoded targets
+        x = x.permute(0, 2, 3, 1) # (batch, S, S, 8) so each cell's values are the last dimension
         return x

@@ -51,10 +51,10 @@ def liveCamera(modelPath=None):
         print("Error: could not open camera")
         return
 
-    cache = {}
+    cache = {}   # tracks known barcodes across frames: id -> {bbox, label, conf, text, framesMissing}
     nextId = 0
-    iouEvictThreshold = 0.3
-    maxFramesMissing = 10
+    iouEvictThreshold = 0.3  # min IoU to consider a detection the same barcode as a cached entry
+    maxFramesMissing = 10    # frames a cached entry survives without being matched before eviction
     tel = telemetry()
 
     while True:
@@ -62,9 +62,9 @@ def liveCamera(modelPath=None):
         if not ret:
             break
 
-        detections, latencyMs = runInference(model, frame, confThreshold=0.3)
+        detections, latencyMs = runInference(model, frame, confThreshold=0.3)  # low threshold to catch candidates for decoding
 
-        displayDetections = [d for d in detections if d[2] >= 0.5]
+        displayDetections = [d for d in detections if d[2] >= 0.5]  # only render boxes above 0.5 to avoid noisy overlays
         tel.recordFrame(latencyMs, displayDetections)
 
         for entry in cache.values():
@@ -83,7 +83,7 @@ def liveCamera(modelPath=None):
                 matched['label'] = label
                 matched['conf'] = conf
                 matched['framesMissing'] = 0
-                if matched['text'] is None:
+                if matched['text'] is None:  # only attempt decode once - avoids repeated zxingcpp calls on the same barcode
                     matched['text'] = decodeCrop(frame, bbox)
                     if matched['text'] is not None:
                         tel.markDecoded(label, conf)
@@ -99,15 +99,15 @@ def liveCamera(modelPath=None):
                 nextId += 1
                 decoded.append(parseDecodeString(text))
 
-        cache = {k: v for k, v in cache.items() if v['framesMissing'] <= maxFramesMissing}
+        cache = {k: v for k, v in cache.items() if v['framesMissing'] <= maxFramesMissing}  # evict stale entries
 
         frame = drawDetections(frame, displayDetections, decoded)
         cv2.putText(frame, f"{latencyMs:.1f} ms", (10, 20),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
 
         cv2.imshow("Barcode Scanner", frame)
-        key = cv2.waitKey(1) & 0xFF
-        windowClosed = cv2.getWindowProperty("Barcode Scanner", cv2.WND_PROP_VISIBLE) < 1
+        key = cv2.waitKey(1) & 0xFF  # & 0xFF masks to 8 bits for cross-platform key code compatibility
+        windowClosed = cv2.getWindowProperty("Barcode Scanner", cv2.WND_PROP_VISIBLE) < 1  # detect window X button
         if key == ord('q') or windowClosed:
             break
 

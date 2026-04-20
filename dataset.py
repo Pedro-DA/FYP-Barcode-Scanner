@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 
 BARBER_CLASS_MAP = {
-    # 1D barcodes → class 0
+    # 1D barcodes -> class 0
     '1D':             0,
     'C128':           0, 
     'UCC128':         0, 
@@ -24,7 +24,7 @@ BARBER_CLASS_MAP = {
     'POSTNET':        0,
     'INTELLIGENTMAIL':0,
     '2-DIGIT':        0,
-    # 2D barcodes → class 1
+    # 2D barcodes -> class 1
     'QR':             1,
     'DATAMATRIX':     1,
     'PDF417':         1,
@@ -63,14 +63,14 @@ def augmentSample(img, objects, imgW, imgH):
         newObjs = []
         for obj in objects:
             pts = np.array(obj['points'], dtype=np.float32)
-            pts_h = np.column_stack([pts, np.ones(len(pts))])
+            pts_h = np.column_stack([pts, np.ones(len(pts))])  # homogeneous coords for affine matrix multiply
             rotPts = (M @ pts_h.T).T.tolist()
             xs = [p[0] for p in rotPts]; ys = [p[1] for p in rotPts]
             newObjs.append({**obj, 'xmin': max(0, min(xs)), 'xmax': min(imgW, max(xs)),
                             'ymin': max(0, min(ys)), 'ymax': min(imgH, max(ys)), 'points': rotPts})
         objects = newObjs
 
-    # Colour jitter — image only, no point transforms
+    # Colour jitter - image only, no point transforms
     if random.random() < 0.5:
         factor = random.uniform(0.6, 1.4)   # brightness
         img = np.clip(img.astype(np.float32) * factor, 0, 255).astype(np.uint8)
@@ -79,7 +79,7 @@ def augmentSample(img, objects, imgW, imgH):
         contrast = random.uniform(0.8, 1.2)
         img = np.clip((img - mean) * contrast + mean, 0, 255).astype(np.uint8)
 
-    # Scale jitter — zoom in (crop) or zoom out (pad)
+    # Scale jitter - zoom in (crop) or zoom out (pad)
     if random.random() < 0.5:
         scale = random.uniform(0.7, 1.3)
         if scale >= 1.0:
@@ -181,7 +181,7 @@ def encodeLabelGrid(objects, imgW, imgH, S=8):
         cellX = min(int(cx * S), S - 1)
         cellY = min(int(cy * S), S - 1)
 
-        offsetX = cx * S - cellX
+        offsetX = cx * S - cellX  # position within the cell [0, 1]
         offsetY = cy * S - cellY
 
         # only write if cell is empty (first object wins on collision)
@@ -189,9 +189,9 @@ def encodeLabelGrid(objects, imgW, imgH, S=8):
             pts = np.array(obj['points'], dtype=np.float32)
             rect = cv2.minAreaRect(pts)
             rectW, rectH = rect[1]
-            angle = rect[2] + (90 if rectW < rectH else 0)  # normalise long axis to [0°, 90°]
-            angle_rad = np.deg2rad(angle * 2)
-            sinEnc = (np.sin(angle_rad) + 1) / 2  # shift [-1,1] → [0,1] for sigmoid
+            angle = rect[2] + (90 if rectW < rectH else 0)  # normalise so long axis is always reference
+            angle_rad = np.deg2rad(angle * 2)  # double the angle so 0-90 maps to full 0-180 sin/cos cycle
+            sinEnc = (np.sin(angle_rad) + 1) / 2  # shift [-1,1] -> [0,1] so sigmoid can represent it
             cosEnc = (np.cos(angle_rad) + 1) / 2
 
             target[cellY, cellX] = torch.tensor([
@@ -220,11 +220,11 @@ class barcodeDataset(Dataset):
 
         img = cv2.resize(img, (128, 128))
         img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        img = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
+        img = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0  # HWC -> CHW, normalise to [0,1]
         target = encodeLabelGrid(objects, imgW, imgH, self.S)
         return img, target
 
-    
+
 class cachedBarcodeDataset(Dataset):
     def __init__(self, samples, S=8, augment=False):
         self.S = S
@@ -249,9 +249,9 @@ class cachedBarcodeDataset(Dataset):
                     'xmax': obj['xmax'] * scaleX,
                     'ymin': obj['ymin'] * scaleY,
                     'ymax': obj['ymax'] * scaleY,
-                    'points': scaledPts,
+                    'points': scaledPts,  # scale annotation points to match resized image coords
                 })
-            self.cache.append((img, scaledObjects, 128, 128))
+            self.cache.append((img, scaledObjects, 128, 128))  # store at final resolution so augment works correctly
 
 
     def __len__(self):
@@ -286,7 +286,7 @@ def buildDataloaders(batchSize=32, testSize=0.2, randomState=43, S=8, cache=Fals
     trainDataset = datasetClass(trainSamples, S=S, augment=True)
     valDataset   = datasetClass(valSamples,   S=S, augment=False)
 
-    trainLoader = DataLoader(trainDataset, batch_size=batchSize, shuffle=True, pin_memory=True)
-    valLoader = DataLoader(valDataset, batch_size=batchSize, shuffle=False, pin_memory=True)
+    trainLoader = DataLoader(trainDataset, batch_size=batchSize, shuffle=True,  pin_memory=True)  # pin_memory speeds up CPU→GPU transfer
+    valLoader   = DataLoader(valDataset,   batch_size=batchSize, shuffle=False, pin_memory=True)  # no shuffle - deterministic eval
 
     return trainLoader, valLoader

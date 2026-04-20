@@ -12,28 +12,29 @@ import torch.optim as optim
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def yoloLoss(pred, target, config):
-    # pred, target: (batch, S, S, 6) — [conf, x, y, w, h, class]
-    objMask  = target[..., 0] == 1   # (batch, S, S) bool
-    nobjMask = ~objMask
+    # pred, target: (batch, S, S, 6) - [conf, x, y, w, h, class]
+    objMask  = target[..., 0] == 1   # True where ground-truth says an object exists
+    nobjMask = ~objMask               # Everything else - background cells
 
-    lambdaCoord = config.get('lambdaCoord', 5.0)
-    lambdaNoobj = config.get('lambdaNoobj', 0.5)
+    lambdaCoord = config.get('lambdaCoord', 5.0)  # Upweight localisation vs confidence
+    lambdaNoobj = config.get('lambdaNoobj', 0.5)  # Downweight background confidence (many more cells)
     lambdaAngle = config.get('lambdaAngle', 1.0)
 
-    # Confidence — BCE, downweight no-obj cells
+    # Confidence - BCE, downweight no-obj cells
     rawConfLoss = F.binary_cross_entropy(pred[..., 0], target[..., 0], reduction='none')
     confLoss = (objMask.float() * rawConfLoss + lambdaNoobj * nobjMask.float() * rawConfLoss).sum()
 
-    # Bbox — MSE with sqrt on w/h, only obj cells
+    # Bbox - MSE with sqrt on w/h, only obj cells
     bboxLoss = torch.tensor(0.0, device=pred.device)
     if objMask.any():
         predBox = pred[objMask][..., 1:5]    # (N, 4) [x, y, w, h]
         targBox = target[objMask][..., 1:5]
+        # sqrt on w/h so large and small boxes contribute equally to the loss
         predSqrt = torch.cat([predBox[..., :2], predBox[..., 2:].clamp(min=1e-6).sqrt()], dim=-1)
         targSqrt = torch.cat([targBox[..., :2], targBox[..., 2:].clamp(min=1e-6).sqrt()], dim=-1)
         bboxLoss = lambdaCoord * F.mse_loss(predSqrt, targSqrt, reduction='sum')
 
-    # Class — BCE, only obj cells
+    # Class - BCE, only obj cells
     classLoss = torch.tensor(0.0, device=pred.device)
     if objMask.any():
         classLoss = F.binary_cross_entropy(
@@ -43,11 +44,11 @@ def yoloLoss(pred, target, config):
     angleLoss = torch.tensor(0.0, device=pred.device)
     if objMask.any():
         angleLoss = lambdaAngle * F.mse_loss(
-            pred[objMask][..., 6:8], target[objMask][..., 6:8], reduction='sum'
+            pred[objMask][..., 6:8], target[objMask][..., 6:8], reduction='sum'  # sin/cos angle components
         )
 
     batchSize = pred.shape[0]
-    total = (confLoss + bboxLoss + classLoss + angleLoss) / batchSize
+    total = (confLoss + bboxLoss + classLoss + angleLoss) / batchSize  # normalise so loss scale is batch-size independent
     return total, confLoss.item() / batchSize, bboxLoss.item() / batchSize, classLoss.item() / batchSize, angleLoss.item() / batchSize
 
 def generateRunId():
@@ -145,7 +146,7 @@ def train(model, trainLoader, valLoader, config):
 
     optimizer = optim.SGD(model.parameters(), lr=config['lr'], momentum=config.get('momentum', 0.9), weight_decay=config.get('weightDecay', 1e-4))
     scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=config.get('tMax', config['numEpochs']), eta_min=config.get('etaMin', 1e-6)
+        optimizer, T_max=config.get('tMax', config['numEpochs']), eta_min=config.get('etaMin', 1e-6)  # decays LR from lr -> etaMin following a cosine curve
     )
 
 
@@ -178,11 +179,11 @@ def train(model, trainLoader, valLoader, config):
         model.train()
         for imgs, targets in trainLoader:
             imgs, targets = imgs.to(device), targets.to(device)
-            optimizer.zero_grad(set_to_none=True)
+            optimizer.zero_grad(set_to_none=True)  # set_to_none frees memory instead of zeroing
             pred = model(imgs)
             loss, _, _, _, _ = yoloLoss(pred.float(), targets, config)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=config.get('gradClipNorm', 10.0))
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=config.get('gradClipNorm', 10.0))  # prevent exploding gradients
             optimizer.step()
             trainTotalLoss += loss.item()
 
@@ -202,31 +203,31 @@ def train(model, trainLoader, valLoader, config):
 
                 objMask = targets[..., 0] == 1
                 totalObjCells   += objMask.sum().item()
-                correctObjCells += (pred[..., 0][objMask] > 0.5).sum().item()
+                correctObjCells += (pred[..., 0][objMask] > 0.5).sum().item()  # how many obj cells the model correctly fires on
 
-        currentLr = optimizer.param_groups[0]['lr']
+        currentLr = optimizer.param_groups[0]['lr']  # read before scheduler.step() updates it
         scheduler.step()
 
         objRecall = (correctObjCells / totalObjCells * 100) if totalObjCells > 0 else 0.0
         epochDuration = time.time() - epochStart
         numValBatches = len(valLoader)
         avgValLoss = valTotalLoss / numValBatches
-        isBest = avgValLoss < bestValLoss
-        isRunBest = avgValLoss < runBestValLoss
+        isBest = avgValLoss < bestValLoss      # best across all runs ever
+        isRunBest = avgValLoss < runBestValLoss  # best within this run only
 
         if isRunBest:
             runBestValLoss = avgValLoss
-            torch.save(model.state_dict(), runDir / 'bestModel.pth')
-            epochsWithoutImprovement = 0   # ← move here
+            torch.save(model.state_dict(), runDir / 'bestModel.pth')  # per-run checkpoint
+            epochsWithoutImprovement = 0
         else:
             epochsWithoutImprovement += 1
-            if epochsWithoutImprovement >= patience:
+            if epochsWithoutImprovement >= patience:  # stop if no improvement for `patience` epochs
                 print(f"Early stopping at epoch {epoch + 1}")
                 break
 
         if isBest:
             bestValLoss = avgValLoss
-            torch.save(model.state_dict(), modelsDir / 'bestModel.pth')
+            torch.save(model.state_dict(), modelsDir / 'bestModel.pth')  # global best - overwrites across runs
             with open(modelsDir / 'bestValLoss.json', 'w') as f:
                 json.dump({'valLoss': avgValLoss, 'runId': runId}, f)
 

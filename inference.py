@@ -21,7 +21,7 @@ def preprocess(bgrFrame, imageSize=128):
     image = cv2.resize(bgrFrame, (imageSize, imageSize))
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     image = image.astype("float32") / 255.0
-    tensor = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).float()
+    tensor = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0).float()  # HWC -> CHW, add batch dim
     return tensor.to(device)
 
 def decodeGrid(output, origH, origW, confThreshold=0.5):
@@ -35,9 +35,9 @@ def decodeGrid(output, origH, origW, confThreshold=0.5):
             if conf < confThreshold:
                 continue
 
-            cx = (col + cell[1].item()) / S * origW
+            cx = (col + cell[1].item()) / S * origW  # cell index + offset -> absolute pixel coords
             cy = (row + cell[2].item()) / S * origH
-            w  = cell[3].item() * origW
+            w  = cell[3].item() * origW  # w/h are relative to full image
             h  = cell[4].item() * origH
 
             x1 = int(cx - w / 2)
@@ -46,16 +46,16 @@ def decodeGrid(output, origH, origW, confThreshold=0.5):
             y2 = int(cy + h / 2)
 
             label = "qr" if cell[5].item() > 0.5 else "barcode"
-            sinVal = cell[6].item() * 2 - 1
+            sinVal = cell[6].item() * 2 - 1  # undo [0,1] encoding back to [-1,1]
             cosVal = cell[7].item() * 2 - 1
-            angle  = np.degrees(np.arctan2(sinVal, cosVal)) / 2
+            angle  = np.degrees(np.arctan2(sinVal, cosVal)) / 2  # undo the 2x angle encoding
             detections.append((label, (x1, y1, x2, y2), conf, angle))
 
     return detections
 
 def decodeCrop(bgrFrame, bbox):
     x1, y1, x2, y2 = bbox
-    padX = int((x2 - x1) * 0.2)
+    padX = int((x2 - x1) * 0.2)  # 20% padding gives zxingcpp more context around the barcode edges
     padY = int((y2 - y1) * 0.2)
     x1, y1 = max(0, x1 - padX), max(0, y1 - padY)
     x2, y2 = min(bgrFrame.shape[1], x2 + padX), min(bgrFrame.shape[0], y2 + padY)
@@ -99,12 +99,12 @@ def computeIou(box1, box2):
     return intersection / union if union > 0 else 0.0
 
 def nms(detections, iouThreshold=0.5):
-    detections = sorted(detections, key=lambda d: d[2], reverse=True)
+    detections = sorted(detections, key=lambda d: d[2], reverse=True)  # greedy: process highest-confidence first
     kept = []
     while detections:
         best = detections.pop(0)
         kept.append(best)
-        detections = [d for d in detections if computeIou(best[1], d[1]) < iouThreshold]
+        detections = [d for d in detections if computeIou(best[1], d[1]) < iouThreshold]  # suppress overlapping boxes
     return kept
 
 def runInference(model, bgrFrame, confThreshold=0.5, iouThreshold=0.5):
