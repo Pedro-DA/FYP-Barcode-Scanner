@@ -115,7 +115,7 @@ def liveCamera(modelPath=None):
     cv2.destroyAllWindows()
     tel.report() 
 
-def trainModel(cache=False, datasetPath='Dataset/BarBeR'):
+def trainModel(cache=False, datasetPath='Dataset'):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     trainLoader, valLoader = buildDataloaders(cache=cache, datasetPath=datasetPath)
     model = GridDetectionNet().to(device)
@@ -150,6 +150,6 @@ if __name__ == '__main__':
     elif args.mode == 'camera':
         liveCamera(args.modelPath)
     elif args.mode == 'train':
-        trainModel(cache=args.cache, datasetPath='Dataset/BarBeR')
+        trainModel(cache=args.cache, datasetPath='Dataset')
 
 

@@ -120,7 +120,7 @@ def augmentSample(img, objects, imgW, imgH):
 
     return img, objects
 
-def parseBarBeRJson(datasetPath='Dataset/BarBeR'):
+def parseBarBeRJson(datasetPath='Dataset'):
     datasetPath = Path(datasetPath)
     imageDir = datasetPath / 'Images'
     annotDir = datasetPath / 'Annotations'
@@ -270,7 +270,7 @@ class cachedBarcodeDataset(Dataset):
         return img, target
 
 
-def buildDataloaders(batchSize=32, testSize=0.2, randomState=43, S=8, cache=False, datasetPath='Dataset/BarBeR'):
+def buildDataloaders(batchSize=32, testSize=0.2, randomState=43, S=8, cache=False, datasetPath='Dataset'):
     samples = parseBarBeRJson(datasetPath=datasetPath)
 
     random.seed(randomState)
