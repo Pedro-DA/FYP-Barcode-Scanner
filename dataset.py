@@ -188,7 +188,9 @@ def encodeLabelGrid(objects, imgW, imgH, S=8):
         if target[cellY, cellX, 0] == 0:
             pts = np.array(obj['points'], dtype=np.float32)
             rect = cv2.minAreaRect(pts)
-            angle_rad = np.deg2rad(rect[2] * 2)   # double the angle for 180° symmetry
+            rectW, rectH = rect[1]
+            angle = rect[2] + (90 if rectW < rectH else 0)  # normalise long axis to [0°, 90°]
+            angle_rad = np.deg2rad(angle * 2)
             sinEnc = (np.sin(angle_rad) + 1) / 2  # shift [-1,1] → [0,1] for sigmoid
             cosEnc = (np.cos(angle_rad) + 1) / 2
 

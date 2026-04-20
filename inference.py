@@ -48,15 +48,17 @@ def decodeGrid(output, origH, origW, confThreshold=0.5):
             label = "qr" if cell[5].item() > 0.5 else "barcode"
             sinVal = cell[6].item() * 2 - 1
             cosVal = cell[7].item() * 2 - 1
-            angle  = 0 #np.degrees(np.arctan2(sinVal, cosVal)) / 2
+            angle  = np.degrees(np.arctan2(sinVal, cosVal)) / 2
             detections.append((label, (x1, y1, x2, y2), conf, angle))
 
     return detections
 
 def decodeCrop(bgrFrame, bbox):
     x1, y1, x2, y2 = bbox
-    x1, y1 = max(0, x1), max(0, y1)
-    x2, y2 = min(bgrFrame.shape[1], x2), min(bgrFrame.shape[0], y2)
+    padX = int((x2 - x1) * 0.2)
+    padY = int((y2 - y1) * 0.2)
+    x1, y1 = max(0, x1 - padX), max(0, y1 - padY)
+    x2, y2 = min(bgrFrame.shape[1], x2 + padX), min(bgrFrame.shape[0], y2 + padY)
     if x2 <= x1 or y2 <= y1:
         return None
     crop = bgrFrame[y1:y2, x1:x2]
