@@ -2,7 +2,7 @@ import torch
 from torch import nn
     
 class GridDetectionNet(nn.Module):
-    def __init__(self, in_channels: int = 3, S: int = 8, hidden_units: int = 64):
+    def __init__(self, in_channels: int = 3, S: int = 8, hidden_units: int = 32):
         super().__init__()
         self.S = S
 

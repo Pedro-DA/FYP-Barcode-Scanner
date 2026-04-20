@@ -79,6 +79,45 @@ def augmentSample(img, objects, imgW, imgH):
         contrast = random.uniform(0.8, 1.2)
         img = np.clip((img - mean) * contrast + mean, 0, 255).astype(np.uint8)
 
+    # Scale jitter — zoom in (crop) or zoom out (pad)
+    if random.random() < 0.5:
+        scale = random.uniform(0.7, 1.3)
+        if scale >= 1.0:
+            # Zoom in: crop a smaller region, resize back to full size
+            cropSize = int(imgW / scale)
+            cropX = random.randint(0, imgW - cropSize)
+            cropY = random.randint(0, imgH - cropSize)
+            img = cv2.resize(img[cropY:cropY + cropSize, cropX:cropX + cropSize], (imgW, imgH))
+            newObjs = []
+            for obj in objects:
+                newPts = [((x - cropX) / cropSize * imgW, (y - cropY) / cropSize * imgH)
+                        for x, y in obj['points']]
+                xs = [p[0] for p in newPts]; ys = [p[1] for p in newPts]
+                if max(xs) < 0 or min(xs) > imgW or max(ys) < 0 or min(ys) > imgH:
+                    continue  # object fully outside crop
+                newObjs.append({**obj,
+                                'xmin': max(0, min(xs)), 'xmax': min(imgW, max(xs)),
+                                'ymin': max(0, min(ys)), 'ymax': min(imgH, max(ys)),
+                                'points': newPts})
+            objects = newObjs
+        else:
+            # Zoom out: resize small, paste onto blank canvas at random offset
+            smallW = int(imgW * scale); smallH = int(imgH * scale)
+            canvas = np.zeros((imgH, imgW, 3), dtype=np.uint8)
+            offX = random.randint(0, imgW - smallW)
+            offY = random.randint(0, imgH - smallH)
+            canvas[offY:offY + smallH, offX:offX + smallW] = cv2.resize(img, (smallW, smallH))
+            img = canvas
+            newObjs = []
+            for obj in objects:
+                newPts = [(x * scale + offX, y * scale + offY) for x, y in obj['points']]
+                xs = [p[0] for p in newPts]; ys = [p[1] for p in newPts]
+                newObjs.append({**obj,
+                                'xmin': max(0, min(xs)), 'xmax': min(imgW, max(xs)),
+                                'ymin': max(0, min(ys)), 'ymax': min(imgH, max(ys)),
+                                'points': newPts})
+            objects = newObjs
+
     return img, objects
 
 def parseBarBeRJson(datasetPath='Dataset/BarBeR'):

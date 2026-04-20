@@ -63,9 +63,9 @@ def liveCamera(modelPath=None):
             break
 
         detections, latencyMs = runInference(model, frame, confThreshold=0.3)
-        tel.recordFrame(latencyMs, detections)
 
         displayDetections = [d for d in detections if d[2] >= 0.5]
+        tel.recordFrame(latencyMs, displayDetections)
 
         for entry in cache.values():
             entry['framesMissing'] += 1
@@ -120,7 +120,7 @@ def trainModel(cache=False, datasetPath='Dataset/BarBeR'):
     trainLoader, valLoader = buildDataloaders(cache=cache, datasetPath=datasetPath)
     model = GridDetectionNet().to(device)
     config = {
-        'numEpochs': 100,
+        'numEpochs': 200,
         'lr': 0.005,
         'lambdaCoord': 5.0,
         'lambdaNoobj': 0.5,
@@ -129,8 +129,8 @@ def trainModel(cache=False, datasetPath='Dataset/BarBeR'):
         'gradClipNorm': 10,
         'etaMin': 1e-6,
         'batchSize': 64,
-        'tMax': 100,
-        'earlyStoppingPatience': 20,
+        'tMax': 200,
+        'earlyStoppingPatience': 40,
         'momentum': 0.9,
     }
     train(model, trainLoader, valLoader, config)
